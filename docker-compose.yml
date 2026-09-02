@@ -1,0 +1,113 @@
+name: quinielalab
+
+x-api-environment: &api-environment
+  APP_NAME: QuinielaLab
+  APP_ENV: local
+  # Clave publica y determinista solo para desarrollo local; nunca usar en produccion.
+  APP_KEY: ${APP_KEY:-base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=}
+  APP_DEBUG: "true"
+  APP_URL: http://localhost:8080
+  APP_TIMEZONE: America/Santo_Domingo
+  APP_VERSION: local
+  GIT_SHA: local
+  LOG_CHANNEL: stderr
+  DB_CONNECTION: mysql
+  DB_HOST: mysql
+  DB_PORT: 3306
+  DB_DATABASE: quinielalab
+  DB_USERNAME: quinielalab
+  DB_PASSWORD: local_only_password
+  REDIS_CLIENT: predis
+  REDIS_HOST: redis
+  CACHE_STORE: redis
+  QUEUE_CONNECTION: redis
+  SESSION_DRIVER: redis
+  SESSION_DOMAIN: localhost
+  SANCTUM_STATEFUL_DOMAINS: localhost:5173,localhost:8080
+  CORS_ALLOWED_ORIGINS: http://localhost:5173
+
+x-api-service: &api-service
+  build:
+    context: .
+    dockerfile: infra/docker/api/Dockerfile
+    target: runtime
+  image: quinielalab-api:local
+  environment: *api-environment
+  restart: unless-stopped
+  depends_on:
+    mysql: { condition: service_healthy }
+    redis: { condition: service_healthy }
+
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: quinielalab
+      MYSQL_USER: quinielalab
+      MYSQL_PASSWORD: local_only_password
+      MYSQL_ROOT_PASSWORD: root_local_only_password
+      TZ: America/Santo_Domingo
+    volumes: [mysql_data:/var/lib/mysql]
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot_local_only_password"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    <<: *api-service
+
+  horizon:
+    <<: *api-service
+    command: ["php", "artisan", "horizon"]
+    healthcheck:
+      test: ["CMD", "php", "artisan", "horizon:status"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+
+  scheduler:
+    <<: *api-service
+    command: ["php", "artisan", "schedule:work"]
+    healthcheck:
+      test: ["CMD", "php", "-r", "exit(0);"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+  api-nginx:
+    build:
+      context: .
+      dockerfile: infra/docker/api/Dockerfile
+      target: nginx
+    image: quinielalab-api-nginx:local
+    restart: unless-stopped
+    ports: ["8080:8080"]
+    depends_on:
+      api: { condition: service_healthy }
+      scheduler: { condition: service_healthy }
+
+  web:
+    build:
+      context: .
+      dockerfile: infra/docker/web/Dockerfile
+    image: quinielalab-web:local
+    restart: unless-stopped
+    ports: ["5173:8080"]
+    depends_on:
+      api-nginx: { condition: service_healthy }
+
+volumes:
+  mysql_data:
+  redis_data:

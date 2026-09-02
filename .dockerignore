@@ -1,0 +1,16 @@
+.git
+.github
+.DS_Store
+**/.DS_Store
+**/.env
+**/.env.*
+!**/.env.example
+**/node_modules
+**/vendor
+**/dist
+**/coverage
+**/storage/logs/*
+**/bootstrap/cache/*.php
+**/*.xlsx
+**/*.zip
+docs
