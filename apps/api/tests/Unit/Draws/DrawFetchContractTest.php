@@ -117,6 +117,18 @@ it('rejects invalid payloads and state combinations', function (string $status, 
     'non array payload element' => [DrawFetchResult::AVAILABLE, ['not-an-array'], null, null, []],
 ])->throws(InvalidArgumentException::class);
 
+it('rejects failure HTTP statuses outside the response range', function (int $httpStatus): void {
+    new DrawFetchResult(DrawFetchResult::FAILURE, [], 'The provider failed.', $httpStatus);
+})->with([99, 600])->throws(InvalidArgumentException::class);
+
+it('rejects payloads that are not a list', function (): void {
+    new DrawFetchResult(DrawFetchResult::AVAILABLE, ['fixture-1' => ['draw_id' => 'fixture-1']]);
+})->throws(InvalidArgumentException::class);
+
+it('rejects a failure with an empty reason', function (string $reason): void {
+    new DrawFetchResult(DrawFetchResult::FAILURE, [], $reason);
+})->with(['', '   '])->throws(InvalidArgumentException::class);
+
 it('declares provider capabilities for current, date and range fetches', function (): void {
     $capabilities = new DrawProviderCapabilities(current: true, date: false, range: true);
 

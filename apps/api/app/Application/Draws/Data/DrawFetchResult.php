@@ -16,8 +16,8 @@ final readonly class DrawFetchResult
     public array $safeContext;
 
     /**
-     * @param array<mixed> $payloads
-     * @param array<mixed> $safeContext
+     * @param  array<mixed>  $payloads
+     * @param  array<mixed>  $safeContext
      */
     public function __construct(
         public string $status,
@@ -100,7 +100,7 @@ final readonly class DrawFetchResult
     }
 
     /** @param array<mixed> $context
-     *  @return array<mixed>
+     * @return array<mixed>
      */
     private static function sanitizeContext(array $context): array
     {
