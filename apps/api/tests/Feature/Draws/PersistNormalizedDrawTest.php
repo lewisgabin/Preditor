@@ -13,9 +13,13 @@ use App\Infrastructure\Persistence\Eloquent\Models\DrawQuarantine;
 use App\Infrastructure\Persistence\Eloquent\Models\Lottery;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncError;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
-use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Database\Events\TransactionRolledBack;
+use Illuminate\Database\QueryException;
+use Illuminate\Foundation\Testing\DatabaseMigrations;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 
-uses(RefreshDatabase::class);
+uses(DatabaseMigrations::class);
 
 beforeEach(function (): void {
     $this->lottery = Lottery::factory()->create(['external_id' => 4]);
@@ -96,12 +100,55 @@ it('sanitizes reflected provider secrets before quarantining', function (): void
         ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('reflected-provider-secret');
 });
 
-it('recovers a duplicate identity as unchanged when the normalized payload is retried', function (): void {
-    ($this->persist)(normalizedDraw(), $this->run);
-    $result = ($this->persist)(normalizedDraw(), $this->run);
+it('recovers a forced duplicate-key race as unchanged without appending a correction', function (): void {
+    $data = normalizedDraw();
+    config(['database.connections.draw-race' => config('database.connections.mysql')]);
+    DB::purge('draw-race');
+
+    $insertedByRace = false;
+    Event::listen(TransactionRolledBack::class, function () use (&$insertedByRace, $data): void {
+        if ($insertedByRace) {
+            return;
+        }
+
+        $insertedByRace = true;
+        DB::connection('draw-race')->table('draws')->insert([
+            'lottery_id' => $this->lottery->id,
+            'provider' => $data->provider,
+            'external_draw_id' => $data->externalDrawId,
+            'draw_date_local' => $data->drawDateLocal->format('Y-m-d'),
+            'scheduled_at_utc' => $data->scheduledAtUtc?->format('Y-m-d H:i:s.u'),
+            'drawn_at_utc' => $data->drawnAtUtc?->format('Y-m-d H:i:s.u'),
+            'p1' => $data->p1->value(),
+            'p2' => $data->p2->value(),
+            'p3' => $data->p3->value(),
+            'status' => DrawStatus::Confirmed->value,
+            'source_hash' => $data->sourceHash,
+            'raw_payload' => json_encode($data->rawPayload, JSON_THROW_ON_ERROR),
+            'received_at' => $data->receivedAt->format('Y-m-d H:i:s.u'),
+            'confirmed_at' => now()->format('Y-m-d H:i:s.u'),
+            'corrected_at' => null,
+            'created_at' => now()->format('Y-m-d H:i:s'),
+            'updated_at' => now()->format('Y-m-d H:i:s'),
+        ]);
+    });
+
+    Draw::creating(function (): void {
+        throw new QueryException('mysql', 'insert into draws', [], new PDOException('Duplicate entry', 23000));
+    });
+
+    try {
+        $result = ($this->persist)($data, $this->run);
+    } finally {
+        Draw::flushEventListeners();
+        Event::forget(TransactionRolledBack::class);
+        DB::purge('draw-race');
+    }
 
     expect($result->status)->toBe('unchanged')
-        ->and(Draw::query()->count())->toBe(1);
+        ->and(Draw::query()->count())->toBe(1)
+        ->and(DrawCorrection::query()->count())->toBe(0)
+        ->and($insertedByRace)->toBeTrue();
 });
 
 it('quarantines two conflicting identities without changing either draw', function (): void {
