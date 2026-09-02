@@ -65,7 +65,11 @@ return [
     |
     */
 
-    'timezone' => 'UTC',
+    'timezone' => env('APP_TIMEZONE', 'America/Santo_Domingo'),
+
+    'version' => env('APP_VERSION'),
+
+    'git_sha' => env('GIT_SHA'),
 
     /*
     |--------------------------------------------------------------------------
