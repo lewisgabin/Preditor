@@ -3,6 +3,7 @@
 use App\Application\Draws\Data\NormalizedDrawData;
 use App\Application\Draws\Normalization\NormalizedPayloadFailure;
 use App\Application\Draws\Normalization\ProviderPayloadNormalizer;
+use App\Infrastructure\Draws\Security\ProviderSecretSanitizer;
 
 beforeEach(function (): void {
     $this->normalizer = new ProviderPayloadNormalizer(static fn (int $externalId): bool => $externalId === 4);
@@ -67,6 +68,16 @@ it('sanitizes nested secret-bearing values, reflected URLs, and non-JSON values 
         ->and(json_encode($result->rawPayload, JSON_THROW_ON_ERROR))->not->toContain($providerKey)
         ->and($result->rawPayload['nested']['api_key'])->toBe('[REDACTED]')
         ->and($result->rawPayload['invalid'])->toBe(['type' => 'object', 'class' => stdClass::class]);
+});
+
+it('uses the configured provider sanitizer for secret values reflected in arbitrary strings', function (): void {
+    $providerKey = 'provider-key-for-tests';
+    $normalizer = new ProviderPayloadNormalizer(static fn (int $externalId): bool => $externalId === 4, new ProviderSecretSanitizer($providerKey));
+    $result = $normalizer->normalize(providerPayload(['premios' => '04-00-105', 'debug' => $providerKey]), 'elboletoganador', 4, $this->receivedAt);
+
+    expect($result)->toBeInstanceOf(NormalizedPayloadFailure::class)
+        ->and($result->rawPayload['debug'])->toBe('[REDACTED]')
+        ->and(json_encode($result->rawPayload, JSON_THROW_ON_ERROR))->not->toContain($providerKey);
 });
 
 /** @return array<string, mixed> */

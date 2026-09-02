@@ -5,6 +5,7 @@ namespace App\Application\Draws\Normalization;
 use App\Application\Draws\Data\NormalizedDrawData;
 use App\Domain\Draws\Enums\DrawStatus;
 use App\Domain\Draws\ValueObjects\LotteryNumber;
+use App\Infrastructure\Draws\Security\ProviderSecretSanitizer;
 use DateTimeImmutable;
 use DateTimeZone;
 use InvalidArgumentException;
@@ -16,6 +17,8 @@ final readonly class ProviderPayloadNormalizer
     /** @var \Closure(int): bool */
     private \Closure $lotteryExists;
 
+    private ProviderSecretSanitizer $sanitizer;
+
     /**
      * The lookup is deliberately supplied by the application boundary. This keeps
      * Eloquent models out of normalized DTOs and prevents a provider payload from
@@ -23,9 +26,10 @@ final readonly class ProviderPayloadNormalizer
      *
      * @param  \Closure(int): bool  $lotteryExists
      */
-    public function __construct(\Closure $lotteryExists)
+    public function __construct(\Closure $lotteryExists, ?ProviderSecretSanitizer $sanitizer = null)
     {
         $this->lotteryExists = $lotteryExists;
+        $this->sanitizer = $sanitizer ?? new ProviderSecretSanitizer;
     }
 
     public function normalize(
@@ -223,7 +227,7 @@ final readonly class ProviderPayloadNormalizer
         }
 
         if (is_string($value)) {
-            return $this->sanitizeString($value);
+            return $this->sanitizer->sanitize($value);
         }
 
         if (is_float($value) && ! is_finite($value)) {
@@ -236,13 +240,6 @@ final readonly class ProviderPayloadNormalizer
     private function sensitiveKey(string $key): bool
     {
         return preg_match('/authorization|cookie|password|secret|token|api[-_]?key/i', $key) === 1;
-    }
-
-    private function sanitizeString(string $value): string
-    {
-        $sanitized = preg_replace('~/api/sorteos/[^/?#]+/~', '/api/sorteos/[REDACTED]/', $value) ?? $value;
-
-        return preg_replace('/([?&](?:api[_-]?key|token|secret|password)=)[^&#\s]*/i', '$1[REDACTED]', $sanitized) ?? $sanitized;
     }
 
     /** @param array<string, mixed> $rawPayload */
