@@ -13,6 +13,7 @@ use App\Infrastructure\Persistence\Eloquent\Models\Draw;
 use App\Infrastructure\Persistence\Eloquent\Models\DrawCorrection;
 use App\Infrastructure\Persistence\Eloquent\Models\DrawQuarantine;
 use App\Infrastructure\Persistence\Eloquent\Models\Lottery;
+use App\Infrastructure\Persistence\Eloquent\Models\SyncError;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
@@ -195,6 +196,44 @@ it('recovers a forced duplicate-key race as unchanged without appending a correc
         ->and($insertedByRace)->toBeTrue();
 });
 
+it('quarantines conflicting identities recovered after a duplicate-key race', function (): void {
+    $data = normalizedDraw();
+    config(['database.connections.draw-race' => config('database.connections.mysql')]);
+    DB::purge('draw-race');
+    $originalConnectionDispatcher = DB::connection()->getEventDispatcher();
+    $originalModelDispatcher = Draw::getEventDispatcher();
+    $testConnectionDispatcher = new Dispatcher($this->app);
+    $testModelDispatcher = new Dispatcher($this->app);
+    DB::connection()->setEventDispatcher($testConnectionDispatcher);
+    Draw::setEventDispatcher($testModelDispatcher);
+
+    $testConnectionDispatcher->listen(TransactionRolledBack::class, function () use ($data): void {
+        DB::connection('draw-race')->table('draws')->insert([
+            raceDrawAttributes($data, $this->lottery->id, '227821', '2026-09-01 00:00:00.000000', hash('sha256', 'external')),
+            raceDrawAttributes($data, $this->lottery->id, 'other-external-id', '2026-09-01 01:01:31.000000', hash('sha256', 'scheduled')),
+        ]);
+    });
+    Draw::creating(function (): void {
+        throw new QueryException('mysql', 'insert into draws', [], new PDOException('Duplicate entry', 23000));
+    });
+
+    try {
+        $result = ($this->persist)($data, $this->run);
+    } finally {
+        Draw::setEventDispatcher($originalModelDispatcher);
+        DB::connection()->setEventDispatcher($originalConnectionDispatcher);
+        DB::purge('draw-race');
+    }
+
+    $this->run->refresh();
+    expect($result->isConflict())->toBeTrue()
+        ->and(Draw::query()->count())->toBe(2)
+        ->and(DrawCorrection::query()->count())->toBe(0)
+        ->and(SyncError::query()->count())->toBe(1)
+        ->and(DrawQuarantine::query()->sole()->error_code)->toBe('identity_conflict')
+        ->and($this->run->items_quarantined)->toBe(1);
+});
+
 it('uses the external identity without falling back to an unrelated scheduled row', function (): void {
     $external = Draw::factory()->for($this->lottery)->create([
         'provider' => 'elboletoganador',
@@ -244,4 +283,28 @@ function normalizedDraw(array $overrides = []): NormalizedDrawData
         rawPayload: ['id' => 227821, 'premios' => $values['p1'].'-'.$values['p2'].'-'.$values['p3']],
         receivedAt: new DateTimeImmutable('2026-09-02T12:00:00Z'),
     );
+}
+
+/** @return array<string, mixed> */
+function raceDrawAttributes(NormalizedDrawData $data, int $lotteryId, string $externalDrawId, string $scheduledAtUtc, string $sourceHash): array
+{
+    return [
+        'lottery_id' => $lotteryId,
+        'provider' => $data->provider,
+        'external_draw_id' => $externalDrawId,
+        'draw_date_local' => $data->drawDateLocal->format('Y-m-d'),
+        'scheduled_at_utc' => $scheduledAtUtc,
+        'drawn_at_utc' => $data->drawnAtUtc?->format('Y-m-d H:i:s.u'),
+        'p1' => $data->p1->value(),
+        'p2' => $data->p2->value(),
+        'p3' => $data->p3->value(),
+        'status' => DrawStatus::Confirmed->value,
+        'source_hash' => $sourceHash,
+        'raw_payload' => json_encode($data->rawPayload, JSON_THROW_ON_ERROR),
+        'received_at' => $data->receivedAt->format('Y-m-d H:i:s.u'),
+        'confirmed_at' => now()->format('Y-m-d H:i:s.u'),
+        'corrected_at' => null,
+        'created_at' => now()->format('Y-m-d H:i:s'),
+        'updated_at' => now()->format('Y-m-d H:i:s'),
+    ];
 }

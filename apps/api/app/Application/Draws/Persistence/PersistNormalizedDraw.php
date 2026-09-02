@@ -5,12 +5,16 @@ namespace App\Application\Draws\Persistence;
 use App\Application\Draws\Data\NormalizedDrawData;
 use App\Application\Draws\Events\DrawConfirmed;
 use App\Application\Draws\Events\DrawCorrected;
+use App\Application\Draws\Events\DrawQuarantined;
 use App\Application\Draws\Normalization\NormalizedPayloadFailure;
 use App\Domain\Draws\Enums\DrawStatus;
+use App\Domain\Draws\Enums\SyncErrorType;
 use App\Infrastructure\Draws\Security\ProviderSecretSanitizer;
 use App\Infrastructure\Persistence\Eloquent\Models\Draw;
 use App\Infrastructure\Persistence\Eloquent\Models\DrawCorrection;
+use App\Infrastructure\Persistence\Eloquent\Models\DrawQuarantine;
 use App\Infrastructure\Persistence\Eloquent\Models\Lottery;
+use App\Infrastructure\Persistence\Eloquent\Models\SyncError;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
 use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
@@ -74,7 +78,13 @@ final readonly class PersistNormalizedDraw
             return ($this->persistQuarantine)(new NormalizedPayloadFailure('unknown_lottery', 'The provider lottery does not exist.', $data->rawPayload, $data->lotteryExternalId), $run);
         }
 
-        $draw = $this->findIdentity($data, $lottery);
+        [$external, $scheduled] = $this->findRecoveredIdentities($data, $lottery);
+
+        if ($external !== null && $scheduled !== null && ! $external->is($scheduled)) {
+            return $this->persistConflict($data, $run, $lottery, $external, $scheduled);
+        }
+
+        $draw = $external ?? $scheduled;
         if ($draw === null) {
             throw new \LogicException('A duplicate draw key could not be recovered.');
         }
@@ -104,6 +114,25 @@ final readonly class PersistNormalizedDraw
             ->first();
     }
 
+    /** @return array{0: ?Draw, 1: ?Draw} */
+    private function findRecoveredIdentities(NormalizedDrawData $data, Lottery $lottery): array
+    {
+        $external = $data->externalDrawId === null ? null : Draw::query()
+            ->where('lottery_id', $lottery->id)
+            ->where('provider', $data->provider)
+            ->where('external_draw_id', $data->externalDrawId)
+            ->lockForUpdate()
+            ->first();
+
+        $scheduled = $data->scheduledAtUtc === null ? null : Draw::query()
+            ->where('lottery_id', $lottery->id)
+            ->where('scheduled_at_utc', $data->scheduledAtUtc)
+            ->lockForUpdate()
+            ->first();
+
+        return [$external, $scheduled];
+    }
+
     private function compareAndPersist(NormalizedDrawData $data, SyncRun $run, Lottery $lottery, Draw $draw): PersistDrawResult
     {
         if (hash_equals($draw->source_hash, $data->sourceHash)) {
@@ -129,6 +158,36 @@ final readonly class PersistNormalizedDraw
         DB::afterCommit(fn () => event(new DrawCorrected($draw, $correction, $run)));
 
         return PersistDrawResult::updated($draw);
+    }
+
+    private function persistConflict(NormalizedDrawData $data, SyncRun $run, Lottery $lottery, Draw $external, Draw $scheduled): PersistDrawResult
+    {
+        SyncError::query()->create([
+            'sync_run_id' => $run->id,
+            'lottery_id' => $lottery->id,
+            'type' => SyncErrorType::Persistence,
+            'message' => 'Draw identities resolve to different persisted rows.',
+            'retryable' => false,
+            'attempt' => 1,
+            'safe_context' => $this->sanitizedArray([
+                'external_draw_id' => $data->externalDrawId,
+                'external_draw_row_id' => $external->id,
+                'scheduled_draw_row_id' => $scheduled->id,
+            ]),
+            'occurred_at' => now(),
+        ]);
+
+        $quarantine = DrawQuarantine::query()->create([
+            'sync_run_id' => $run->id,
+            'lottery_id' => $lottery->id,
+            'raw_payload' => $this->sanitizedArray($data->rawPayload),
+            'error_code' => 'identity_conflict',
+            'validation_errors' => ['message' => 'Draw identities resolve to different persisted rows.'],
+        ]);
+        $run->increment('items_quarantined');
+        DB::afterCommit(fn () => event(new DrawQuarantined($quarantine, $run)));
+
+        return PersistDrawResult::conflict($quarantine);
     }
 
     /** @return array<string, mixed> */
