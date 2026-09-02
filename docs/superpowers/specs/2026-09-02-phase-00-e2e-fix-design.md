@@ -30,10 +30,15 @@ contraseña no debe aparecer en logs.
 ### Compose local
 
 - Emitir cookies host-only por defecto, sin fijarlas a `localhost`.
-- Incluir los puertos web/API soportados para `localhost` y `127.0.0.1` en
-  `SANCTUM_STATEFUL_DOMAINS`.
-- Mantener una allowlist CORS explícita para ambos orígenes web; nunca usar `*`
-  con credenciales.
+- Definir exactamente `SANCTUM_STATEFUL_DOMAINS` con
+  `localhost:5173,127.0.0.1:5173,localhost:5174,127.0.0.1:5174,localhost:8080,127.0.0.1:8080`.
+- Definir exactamente `CORS_ALLOWED_ORIGINS` con
+  `http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174`;
+  nunca usar `*` con credenciales.
+- Permitir sobrescribir ambas listas por variables de entorno. `WEB_PORT=5173` y
+  `WEB_PORT=5174` quedan cubiertos por defecto; cualquier otro puerto exige que el
+  operador amplíe ambas variables. `E2E_BASE_URL` debe señalar el mismo host y
+  puerto publicado por `WEB_PORT`.
 - No modificar `docker-compose.prod.yml`: producción continúa exigiendo
   `SESSION_DOMAIN`, `SANCTUM_STATEFUL_DOMAINS` y `CORS_ALLOWED_ORIGINS`.
 
@@ -43,6 +48,10 @@ contraseña no debe aparecer en logs.
 - Enmascararla con el comando de workflow antes de exportarla a `GITHUB_ENV`.
 - Mantener la entrega por stdin al comando `app:create-owner`.
 - Verificar por condición la salud de la SPA y de `/api/health` antes del login.
+- Comprobar CORS contra la API con orígenes `http://localhost:5173` y
+  `http://127.0.0.1:5173`: cada respuesta debe devolver su origen exacto y
+  `Access-Control-Allow-Credentials: true`. Un origen no autorizado no debe recibir
+  `Access-Control-Allow-Origin`.
 
 ### Playwright
 
@@ -51,9 +60,15 @@ contraseña no debe aparecer en logs.
   aplicación, MySQL y Redis saludables.
 - Conservar el flujo real de Sanctum: adquirir CSRF, enviar credenciales, recibir
   cookies de sesión, navegar a `/` y consultar `/api/v1/auth/me` autenticado.
+- Exigir `E2E_EMAIL` y `E2E_PASSWORD` con un error inmediato y descriptivo; no
+  omitir la prueba cuando falten.
+- Comprobar la existencia de `XSRF-TOKEN` tras adquirir CSRF y de la cookie de
+  sesión tras el login, sin registrar sus valores.
 - Conservar todas las aserciones actuales y añadir comprobaciones de cookie/CSRF;
   no usar `test.skip`, `continue-on-error` ni esperas fijas.
 - Fallar si el navegador registra errores de consola inesperados.
+- Usar sondeos condicionados con timeout acotado para salud y navegación; el
+  intervalo interno del sondeo no sustituye la condición por un `sleep` fijo.
 
 ## Compatibilidad
 
