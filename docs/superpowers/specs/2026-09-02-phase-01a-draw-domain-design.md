@@ -76,10 +76,11 @@ los timestamps de Laravel usarán la precisión predeterminada del proyecto.
 
 La clave única será `(lottery_id, weekday, draw_time_local, effective_from)`, de
 modo que el esquema no prohíba dos sorteos confirmados para el mismo día. La
-aplicación impedirá vigencias solapadas para una misma combinación de lotería,
-día y hora. Las vigencias serán inclusivas. El cierre se interpreta en la zona
-horaria de la lotería: si su hora es posterior a `draw_time_local`, pertenece al
-día calendario anterior; en otro caso pertenece al mismo día.
+prevención de vigencias solapadas se aplicará en el futuro caso de escritura: en
+Fase 1A no existe dicho caso ni se siembran horarios. Las vigencias serán
+inclusivas. El cierre se interpreta en la zona horaria de la lotería: si su hora
+es posterior a `draw_time_local`, pertenece al día calendario anterior; en otro
+caso pertenece al mismo día.
 
 ### `sync_runs`
 
@@ -182,11 +183,13 @@ regla de dominio sin impedir más de un sorteo diario de una lotería.
 
 ### `LotteryNumber`
 
-Acepta únicamente `int|string`. Un entero entre `0` y `99` se normaliza con dos
-dígitos; una cadena debe contener solo uno o dos dígitos y también se normaliza.
-Devuelve siempre `00`–`99`, conserva el significado de ceros iniciales y rechaza
-negativos, valores mayores de `99`, letras, cadenas vacías, `null`, booleanos y
-`float`. La comparación y serialización usan su valor canónico.
+Acepta valores `int|string`; el constructor recibe `mixed` únicamente para poder
+rechazar de modo uniforme todo otro tipo con `InvalidArgumentException`. Un
+entero entre `0` y `99` se normaliza con dos dígitos; una cadena debe contener
+solo uno o dos dígitos y también se normaliza. Devuelve siempre `00`–`99`,
+conserva el significado de ceros iniciales y rechaza negativos, valores mayores
+de `99`, letras, cadenas vacías, `null`, booleanos y `float`. La comparación y
+serialización usan su valor canónico.
 
 ### Enums
 
