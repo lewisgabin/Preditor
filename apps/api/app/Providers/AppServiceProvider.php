@@ -2,6 +2,8 @@
 
 namespace App\Providers;
 
+use App\Infrastructure\Draws\Providers\FakeLotteryDrawProvider;
+use App\Infrastructure\Draws\Providers\LotteryDrawProviderResolver;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -15,7 +17,9 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        //
+        $this->app->singleton(LotteryDrawProviderResolver::class, static fn (): LotteryDrawProviderResolver => new LotteryDrawProviderResolver([
+            'fake' => new FakeLotteryDrawProvider,
+        ]));
     }
 
     /**
