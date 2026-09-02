@@ -28,7 +28,7 @@ test:
 	cd apps/web && npm run test -- --run
 
 lint:
-	cd apps/api && vendor/bin/pint --test && vendor/bin/phpstan analyse --debug
+	cd apps/api && vendor/bin/pint --test && vendor/bin/phpstan analyse --memory-limit=512M --debug
 	cd apps/web && npm run lint && npm run typecheck
 
 build:

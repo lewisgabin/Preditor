@@ -44,7 +44,7 @@ jobs:
           working-directory: apps/api
       - run: composer validate --strict
       - run: vendor/bin/pint --test
-      - run: vendor/bin/phpstan analyse
+      - run: vendor/bin/phpstan analyse --memory-limit=512M
       - run: php artisan test
         env:
           DB_PORT: 3306

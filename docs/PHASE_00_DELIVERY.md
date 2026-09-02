@@ -28,7 +28,7 @@ palés. El dump histórico aportado no se importó.
 cd apps/api
 composer validate --strict
 vendor/bin/pint --test
-vendor/bin/phpstan analyse
+vendor/bin/phpstan analyse --memory-limit=512M
 php artisan test
 
 cd ../web

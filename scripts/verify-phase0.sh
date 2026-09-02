@@ -31,7 +31,7 @@ fi
   cd apps/api
   composer validate --strict
   vendor/bin/pint --test
-  vendor/bin/phpstan analyse --debug
+  vendor/bin/phpstan analyse --memory-limit=512M --debug
   php artisan test
 )
 
@@ -43,7 +43,16 @@ fi
   npm run build
 )
 
-docker compose config --quiet
+if docker compose version >/dev/null 2>&1; then
+  compose=(docker compose)
+elif command -v docker-compose >/dev/null 2>&1; then
+  compose=(docker-compose)
+else
+  echo "Docker Compose no está disponible." >&2
+  exit 1
+fi
+
+"${compose[@]}" config --quiet
 
 : "${APP_KEY:=base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=}"
 : "${APP_URL:=https://api.example.test}"
@@ -57,6 +66,6 @@ docker compose config --quiet
 : "${CORS_ALLOWED_ORIGINS:=https://app.example.test}"
 export APP_KEY APP_URL DB_HOST DB_DATABASE DB_USERNAME DB_PASSWORD REDIS_HOST
 export SESSION_DOMAIN SANCTUM_STATEFUL_DOMAINS CORS_ALLOWED_ORIGINS
-docker compose -f docker-compose.prod.yml config --quiet
+"${compose[@]}" -f docker-compose.prod.yml config --quiet
 
 echo "Fase 0 verificada correctamente."
