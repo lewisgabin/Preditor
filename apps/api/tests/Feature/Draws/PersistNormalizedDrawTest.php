@@ -1,8 +1,10 @@
 <?php
 
 use App\Application\Draws\Data\NormalizedDrawData;
+use App\Application\Draws\Events\DrawConfirmed;
+use App\Application\Draws\Events\DrawCorrected;
+use App\Application\Draws\Events\DrawQuarantined;
 use App\Application\Draws\Normalization\NormalizedPayloadFailure;
-use App\Application\Draws\Persistence\PersistDrawQuarantine;
 use App\Application\Draws\Persistence\PersistNormalizedDraw;
 use App\Domain\Draws\Enums\DrawStatus;
 use App\Domain\Draws\ValueObjects\LotteryNumber;
@@ -11,10 +13,10 @@ use App\Infrastructure\Persistence\Eloquent\Models\Draw;
 use App\Infrastructure\Persistence\Eloquent\Models\DrawCorrection;
 use App\Infrastructure\Persistence\Eloquent\Models\DrawQuarantine;
 use App\Infrastructure\Persistence\Eloquent\Models\Lottery;
-use App\Infrastructure\Persistence\Eloquent\Models\SyncError;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
 use Illuminate\Database\Events\TransactionRolledBack;
 use Illuminate\Database\QueryException;
+use Illuminate\Events\Dispatcher;
 use Illuminate\Foundation\Testing\DatabaseMigrations;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
@@ -29,8 +31,9 @@ beforeEach(function (): void {
         'items_unchanged' => 0,
         'items_quarantined' => 0,
     ]);
-    $sanitizer = new ProviderSecretSanitizer('reflected-provider-secret');
-    $this->persist = new PersistNormalizedDraw(new PersistDrawQuarantine($sanitizer), $sanitizer);
+    config(['lottery-api.key' => 'reflected-provider-secret']);
+    $this->app->forgetInstance(ProviderSecretSanitizer::class);
+    $this->persist = $this->app->make(PersistNormalizedDraw::class);
 });
 
 it('inserts a confirmed normalized draw and increments its run in one transaction', function (): void {
@@ -89,24 +92,65 @@ it('quarantines malformed values and unknown lotteries without creating draws', 
 ]);
 
 it('sanitizes reflected provider secrets before quarantining', function (): void {
-    ($this->persist)(new NormalizedPayloadFailure('invalid_prizes', 'Invalid payload.', [
-        'token' => 'reflected-provider-secret',
-        'url' => 'https://api.elboletoganador.com/api/sorteos/reflected-provider-secret/4',
+    $secret = 'arbitrary-secret-value';
+    config(['lottery-api.key' => $secret]);
+    $this->app->forgetInstance(ProviderSecretSanitizer::class);
+    $persist = $this->app->make(PersistNormalizedDraw::class);
+
+    ($persist)(new NormalizedPayloadFailure('invalid_prizes', 'Invalid payload.', [
+        'token' => $secret,
+        'url' => 'https://api.elboletoganador.com/api/sorteos/'.$secret.'/4',
     ], 4), $this->run);
 
     $payload = DrawQuarantine::query()->sole()->raw_payload;
     expect($payload['token'])->toBe('[REDACTED]')
         ->and($payload['url'])->toContain('/api/sorteos/[REDACTED]/4')
-        ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain('reflected-provider-secret');
+        ->and(json_encode($payload, JSON_THROW_ON_ERROR))->not->toContain($secret);
+});
+
+it('dispatches draw events only after the transaction commits', function (): void {
+    Event::fake([DrawConfirmed::class, DrawCorrected::class, DrawQuarantined::class]);
+
+    ($this->persist)(normalizedDraw(), $this->run);
+    Event::assertDispatched(DrawConfirmed::class);
+
+    ($this->persist)(normalizedDraw(['p1' => '04', 'sourceHash' => hash('sha256', 'corrected')]), $this->run);
+    Event::assertDispatched(DrawCorrected::class);
+
+    ($this->persist)(new NormalizedPayloadFailure('invalid_prizes', 'Invalid payload.', ['premios' => '04-00'], 4), $this->run);
+    Event::assertDispatched(DrawQuarantined::class);
+});
+
+it('suppresses draw events when an outer transaction rolls back', function (): void {
+    Event::fake([DrawConfirmed::class]);
+
+    try {
+        DB::transaction(function (): void {
+            ($this->persist)(normalizedDraw(), $this->run);
+
+            throw new RuntimeException('rollback test transaction');
+        });
+    } catch (RuntimeException) {
+        // The rollback is the behavior under test.
+    }
+
+    Event::assertNotDispatched(DrawConfirmed::class);
+    expect(Draw::query()->count())->toBe(0);
 });
 
 it('recovers a forced duplicate-key race as unchanged without appending a correction', function (): void {
     $data = normalizedDraw();
     config(['database.connections.draw-race' => config('database.connections.mysql')]);
     DB::purge('draw-race');
+    $originalConnectionDispatcher = DB::connection()->getEventDispatcher();
+    $originalModelDispatcher = Draw::getEventDispatcher();
+    $testConnectionDispatcher = new Dispatcher($this->app);
+    $testModelDispatcher = new Dispatcher($this->app);
+    DB::connection()->setEventDispatcher($testConnectionDispatcher);
+    Draw::setEventDispatcher($testModelDispatcher);
 
     $insertedByRace = false;
-    Event::listen(TransactionRolledBack::class, function () use (&$insertedByRace, $data): void {
+    $testConnectionDispatcher->listen(TransactionRolledBack::class, function () use (&$insertedByRace, $data): void {
         if ($insertedByRace) {
             return;
         }
@@ -140,8 +184,8 @@ it('recovers a forced duplicate-key race as unchanged without appending a correc
     try {
         $result = ($this->persist)($data, $this->run);
     } finally {
-        Draw::flushEventListeners();
-        Event::forget(TransactionRolledBack::class);
+        Draw::setEventDispatcher($originalModelDispatcher);
+        DB::connection()->setEventDispatcher($originalConnectionDispatcher);
         DB::purge('draw-race');
     }
 
@@ -151,12 +195,12 @@ it('recovers a forced duplicate-key race as unchanged without appending a correc
         ->and($insertedByRace)->toBeTrue();
 });
 
-it('quarantines two conflicting identities without changing either draw', function (): void {
+it('uses the external identity without falling back to an unrelated scheduled row', function (): void {
     $external = Draw::factory()->for($this->lottery)->create([
         'provider' => 'elboletoganador',
         'external_draw_id' => '227821',
         'scheduled_at_utc' => '2026-09-01 00:00:00',
-        'source_hash' => hash('sha256', 'external'),
+        'source_hash' => hash('sha256', 'original'),
     ]);
     $scheduled = Draw::factory()->for($this->lottery)->create([
         'provider' => 'elboletoganador',
@@ -168,12 +212,11 @@ it('quarantines two conflicting identities without changing either draw', functi
     $result = ($this->persist)(normalizedDraw(), $this->run);
 
     $this->run->refresh();
-    expect($result->isConflict())->toBeTrue()
-        ->and(Draw::query()->findOrFail($external->id)->source_hash)->toBe(hash('sha256', 'external'))
+    expect($result->status)->toBe('unchanged')
+        ->and(Draw::query()->findOrFail($external->id)->source_hash)->toBe(hash('sha256', 'original'))
         ->and(Draw::query()->findOrFail($scheduled->id)->source_hash)->toBe(hash('sha256', 'scheduled'))
-        ->and(SyncError::query()->count())->toBe(1)
-        ->and(DrawQuarantine::query()->sole()->error_code)->toBe('identity_conflict')
-        ->and($this->run->items_quarantined)->toBe(1);
+        ->and(DrawQuarantine::query()->count())->toBe(0)
+        ->and($this->run->items_quarantined)->toBe(0);
 });
 
 /** @param array<string, string> $overrides */

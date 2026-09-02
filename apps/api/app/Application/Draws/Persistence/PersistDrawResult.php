@@ -32,14 +32,4 @@ final readonly class PersistDrawResult
     {
         return new self('quarantined', null, $quarantine);
     }
-
-    public static function conflict(DrawQuarantine $quarantine): self
-    {
-        return new self('conflict', null, $quarantine);
-    }
-
-    public function isConflict(): bool
-    {
-        return $this->status === 'conflict';
-    }
 }

@@ -5,6 +5,7 @@ namespace App\Providers;
 use App\Infrastructure\Draws\Providers\FakeLotteryDrawProvider;
 use App\Infrastructure\Draws\Providers\HttpLotteryDrawProvider;
 use App\Infrastructure\Draws\Providers\LotteryDrawProviderResolver;
+use App\Infrastructure\Draws\Security\ProviderSecretSanitizer;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
@@ -18,6 +19,10 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
+        $this->app->singleton(ProviderSecretSanitizer::class, static fn (): ProviderSecretSanitizer => new ProviderSecretSanitizer(
+            (string) config('lottery-api.key'),
+        ));
+
         $this->app->singleton(LotteryDrawProviderResolver::class, static fn (): LotteryDrawProviderResolver => new LotteryDrawProviderResolver([
             'fake' => new FakeLotteryDrawProvider,
             'elboletoganador' => new HttpLotteryDrawProvider(
