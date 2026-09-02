@@ -39,7 +39,7 @@ jobs:
           php-version: '8.4'
           extensions: bcmath, intl, pdo_mysql
           coverage: none
-      - uses: ramsey/composer-install@v3
+      - uses: ramsey/composer-install@v4
         with:
           working-directory: apps/api
       - run: composer validate --strict
