@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: quinielalab_test
+          MYSQL_USER: quinielalab
+          MYSQL_PASSWORD: test_only_password
+          MYSQL_ROOT_PASSWORD: root_test_only_password
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uroot -proot_test_only_password"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+      redis:
+        image: redis:8-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=5s
+          --health-timeout=3s --health-retries=10
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: bcmath, intl, pdo_mysql
+          coverage: none
+      - uses: ramsey/composer-install@v3
+        with:
+          working-directory: apps/api
+      - run: composer validate --strict
+      - run: vendor/bin/pint --test
+      - run: vendor/bin/phpstan analyse
+      - run: php artisan test
+        env:
+          DB_PORT: 3306
+          REDIS_PORT: 6379
+
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test -- --run
+      - run: npm run build
+
+  containers-and-e2e:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    env:
+      E2E_EMAIL: owner.e2e@example.test
+      IMAGE_TAG: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: docker compose build
+      - run: docker compose up -d mysql redis
+      - run: docker compose run --rm api php artisan migrate --isolated --force
+      - run: docker compose up -d --wait
+      - name: Crear propietario E2E efímero
+        run: |
+          password="Phase0-$(openssl rand -hex 12)!"
+          echo "E2E_PASSWORD=$password" >> "$GITHUB_ENV"
+          printf '%s' "$password" | docker compose exec -T api php artisan app:create-owner --name="Propietario E2E" --email="$E2E_EMAIL" --password-stdin
+      - run: npm ci
+        working-directory: apps/web
+      - run: npx playwright install --with-deps chromium
+        working-directory: apps/web
+      - run: ./scripts/wait-for-health.sh
+      - run: npm run test:e2e
+        working-directory: apps/web
+      - name: Validar imágenes de producción etiquetables por SHA
+        env:
+          APP_KEY: base64:YWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWE=
+          APP_URL: https://api.example.test
+          DB_HOST: mysql.example
+          DB_DATABASE: quinielalab
+          DB_USERNAME: quinielalab
+          DB_PASSWORD: placeholder
+          REDIS_HOST: redis.example
+          SESSION_DOMAIN: .example.test
+          SANCTUM_STATEFUL_DOMAINS: app.example.test
+          CORS_ALLOWED_ORIGINS: https://app.example.test
+        run: docker compose -f docker-compose.prod.yml build
+      - if: always()
+        run: docker compose logs --no-color --tail=200
+      - if: always()
+        run: docker compose down --volumes

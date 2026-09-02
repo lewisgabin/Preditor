@@ -23,8 +23,8 @@ x-api-environment: &api-environment
   QUEUE_CONNECTION: redis
   SESSION_DRIVER: redis
   SESSION_DOMAIN: localhost
-  SANCTUM_STATEFUL_DOMAINS: localhost:5173,localhost:8080
-  CORS_ALLOWED_ORIGINS: http://localhost:5173
+  SANCTUM_STATEFUL_DOMAINS: localhost:5173,localhost:5174,localhost:8080
+  CORS_ALLOWED_ORIGINS: http://localhost:5173,http://localhost:5174
 
 x-api-service: &api-service
   build:
@@ -104,7 +104,7 @@ services:
       dockerfile: infra/docker/web/Dockerfile
     image: quinielalab-web:local
     restart: unless-stopped
-    ports: ["5173:8080"]
+    ports: ["${WEB_PORT:-5173}:8080"]
     depends_on:
       api-nginx: { condition: service_healthy }
 
