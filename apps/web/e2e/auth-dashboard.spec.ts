@@ -1,19 +1,92 @@
-import { expect, test } from '@playwright/test'
+import { expect, test, type APIRequestContext } from '@playwright/test'
 
-test('el propietario inicia sesión y consulta el dashboard', async ({ page }) => {
-  const email = process.env.E2E_EMAIL
-  const password = process.env.E2E_PASSWORD
+const requiredEnvironmentVariable = (name: 'E2E_EMAIL' | 'E2E_PASSWORD'): string => {
+  const value = process.env[name]
 
-  test.skip(!email || !password, 'E2E_EMAIL y E2E_PASSWORD son obligatorios')
+  if (!value) throw new Error(`${name} es obligatoria para ejecutar la prueba E2E`)
 
-  await page.goto('/login')
-  await page.getByLabel('Correo electrónico').fill(email!)
-  await page.getByLabel('Contraseña').fill(password!)
+  return value
+}
+
+const assertAllowedCorsOrigin = async (request: APIRequestContext, apiUrl: string, origin: string) => {
+  const response = await request.get(`${apiUrl}/api/health`, { headers: { Origin: origin } })
+
+  expect(response.status()).toBe(200)
+  expect(response.headers()['access-control-allow-origin']).toBe(origin)
+  expect(response.headers()['access-control-allow-credentials']).toBe('true')
+}
+
+test('el propietario inicia sesión y consulta el dashboard', async ({ page, request }) => {
+  const email = requiredEnvironmentVariable('E2E_EMAIL')
+  const password = requiredEnvironmentVariable('E2E_PASSWORD')
+  const apiUrl = process.env.E2E_API_URL ?? 'http://127.0.0.1:8080'
+  const consoleErrors: string[] = []
+
+  const anonymousProfileResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/v1/auth/me',
+  )
+  const loginPageResponse = await page.goto('/login')
+  expect(loginPageResponse?.status()).toBe(200)
+  expect((await anonymousProfileResponsePromise).status()).toBe(401)
+
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+
+  const healthResponse = await page.request.get('/api/health')
+  expect(healthResponse.status()).toBe(200)
+  await expect(healthResponse.json()).resolves.toMatchObject({
+    status: 'ok',
+    checks: {
+      application: { status: 'ok' },
+      mysql: { status: 'ok' },
+      redis: { status: 'ok' },
+    },
+  })
+
+  await assertAllowedCorsOrigin(request, apiUrl, 'http://localhost:5173')
+  await assertAllowedCorsOrigin(request, apiUrl, 'http://127.0.0.1:5173')
+
+  const untrustedCorsResponse = await request.get(`${apiUrl}/api/health`, {
+    headers: { Origin: 'https://untrusted.example' },
+  })
+  expect(untrustedCorsResponse.status()).toBe(200)
+  expect(untrustedCorsResponse.headers()['access-control-allow-origin']).toBeUndefined()
+
+  await page.getByLabel('Correo electrónico').fill(email)
+  await page.getByLabel('Contraseña').fill(password)
+
+  const csrfResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/sanctum/csrf-cookie',
+  )
+  const loginResponsePromise = page.waitForResponse((response) =>
+    new URL(response.url()).pathname === '/api/v1/auth/login',
+  )
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()
+
+  const csrfResponse = await csrfResponsePromise
+  expect(csrfResponse.status()).toBe(204)
+  expect((await page.context().cookies()).some((cookie) => cookie.name === 'XSRF-TOKEN')).toBe(true)
+
+  const loginResponse = await loginResponsePromise
+  expect(loginResponse.status()).toBe(200)
+  expect((await page.context().cookies()).some((cookie) => cookie.name === 'quinielalab-session')).toBe(true)
 
   await expect(page).toHaveURL('/')
   await expect(page.getByRole('heading', { name: 'Infraestructura visible.' })).toBeVisible()
   await expect(page.getByText('Fase 0 completada', { exact: true })).toBeVisible()
   await expect(page.getByText('MySQL', { exact: true })).toBeVisible()
   await expect(page.getByText('Redis', { exact: true })).toBeVisible()
+
+  const profileResponse = await page.evaluate(async () => {
+    const response = await fetch('/api/v1/auth/me', {
+      credentials: 'include',
+      headers: { Accept: 'application/json' },
+    })
+
+    return { status: response.status, payload: await response.json() }
+  })
+  expect(profileResponse.status).toBe(200)
+  expect(profileResponse.payload).toMatchObject({ data: { email } })
+  expect(consoleErrors).toEqual([])
 })
