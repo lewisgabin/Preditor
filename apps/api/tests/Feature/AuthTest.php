@@ -74,3 +74,21 @@ it('rate limits repeated login attempts', function () {
 it('does not expose public registration', function () {
     $this->postJson('/api/v1/auth/register')->assertNotFound();
 });
+
+it('allows credentialed requests from both local SPA hosts', function (string $origin) {
+    $this->withHeader('Origin', $origin)
+        ->getJson('/api/v1/auth/me')
+        ->assertUnauthorized()
+        ->assertHeader('Access-Control-Allow-Origin', $origin)
+        ->assertHeader('Access-Control-Allow-Credentials', 'true');
+})->with([
+    'localhost' => 'http://localhost:5173',
+    'loopback IP' => 'http://127.0.0.1:5173',
+]);
+
+it('does not allow credentialed CORS requests from an untrusted origin', function () {
+    $this->withHeader('Origin', 'https://untrusted.example')
+        ->getJson('/api/v1/auth/me')
+        ->assertUnauthorized()
+        ->assertHeaderMissing('Access-Control-Allow-Origin');
+});

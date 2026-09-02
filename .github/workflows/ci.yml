@@ -73,7 +73,10 @@ jobs:
     needs: [backend, frontend]
     env:
       E2E_EMAIL: owner.e2e@example.test
+      E2E_BASE_URL: http://127.0.0.1:5173
+      E2E_API_URL: http://127.0.0.1:8080
       IMAGE_TAG: ${{ github.sha }}
+      WEB_PORT: 5173
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -88,13 +91,17 @@ jobs:
       - name: Crear propietario E2E efímero
         run: |
           password="Phase0-$(openssl rand -hex 12)!"
+          echo "::add-mask::$password"
           echo "E2E_PASSWORD=$password" >> "$GITHUB_ENV"
           printf '%s' "$password" | docker compose exec -T api php artisan app:create-owner --name="Propietario E2E" --email="$E2E_EMAIL" --password-stdin
       - run: npm ci
         working-directory: apps/web
       - run: npx playwright install --with-deps chromium
         working-directory: apps/web
-      - run: ./scripts/wait-for-health.sh
+      - name: Esperar SPA
+        run: ./scripts/wait-for-health.sh "$E2E_BASE_URL/"
+      - name: Esperar API
+        run: ./scripts/wait-for-health.sh "$E2E_API_URL/api/health"
       - run: npm run test:e2e
         working-directory: apps/web
       - name: Validar imágenes de producción etiquetables por SHA
