@@ -1,0 +1,37 @@
+# Operating systems and editors
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+!.env.testing.example
+
+# PHP / Laravel
+apps/api/vendor/
+apps/api/storage/*.key
+apps/api/storage/framework/cache/data/*
+apps/api/storage/framework/sessions/*
+apps/api/storage/framework/testing/*
+apps/api/storage/framework/views/*
+apps/api/storage/logs/*
+apps/api/bootstrap/cache/*.php
+apps/api/.phpunit.cache/
+apps/api/coverage/
+
+# Node / Vite
+apps/web/node_modules/
+apps/web/dist/
+apps/web/coverage/
+apps/web/.vite/
+apps/web/playwright-report/
+apps/web/test-results/
+
+# Temporary artifacts
+*.tmp
+*.log
+.cache/
