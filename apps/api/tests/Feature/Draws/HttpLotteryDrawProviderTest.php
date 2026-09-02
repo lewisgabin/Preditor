@@ -4,23 +4,29 @@ use App\Application\Draws\Data\DrawFetchRequest;
 use App\Application\Draws\Data\DrawFetchResult;
 use App\Domain\Draws\Enums\SyncTrigger;
 use App\Infrastructure\Draws\Providers\HttpLotteryDrawProvider;
+use App\Infrastructure\Draws\Security\ProviderSecretSanitizer;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Psr\Log\AbstractLogger;
 
 beforeEach(function (): void {
     $this->apiKey = 'test-provider-key';
     $this->provider = new HttpLotteryDrawProvider('https://api.elboletoganador.com', $this->apiKey, 3, 2);
 });
 
-it('fetches a current draw from the fixed provider endpoint without exposing its key in result details', function (): void {
+it('fetches a current draw from the fixed provider endpoint and keeps its route representation redacted', function (): void {
     Http::fake(['https://api.elboletoganador.com/*' => Http::response(['fecha_sorteo' => '2099-01-01', 'premios' => '12-34-56'])]);
 
     $result = $this->provider->fetch(httpDrawRequest());
 
     Http::assertSent(function (Request $request): bool {
+        $sanitizedUrl = (new ProviderSecretSanitizer($this->apiKey))->sanitize($request->url());
+
         return $request->method() === 'GET'
-            && $request->url() === 'https://api.elboletoganador.com/api/sorteos/'.$this->apiKey.'/4';
+            && parse_url($request->url(), PHP_URL_HOST) === 'api.elboletoganador.com'
+            && $sanitizedUrl === 'https://api.elboletoganador.com/api/sorteos/[REDACTED]/4';
     });
     Http::assertSentCount(1);
 
@@ -29,13 +35,23 @@ it('fetches a current draw from the fixed provider endpoint without exposing its
         ->and(json_encode($result, JSON_THROW_ON_ERROR))->not->toContain($this->apiKey);
 });
 
-it('treats null and an empty object response as pending', function (mixed $payload): void {
+it('treats valid JSON null and an empty object response as pending', function (mixed $payload): void {
     Http::fake(['https://api.elboletoganador.com/*' => Http::response($payload)]);
 
     $result = $this->provider->fetch(httpDrawRequest());
 
     expect($result->status)->toBe(DrawFetchResult::NOT_AVAILABLE);
-})->with([[null], [[]]]);
+})->with([['null'], [[]]]);
+
+it('returns a typed failure for malformed JSON instead of treating it as pending', function (): void {
+    Http::fake(['https://api.elboletoganador.com/*' => Http::response('{not-json')]);
+
+    $result = $this->provider->fetch(httpDrawRequest());
+
+    expect($result->status)->toBe(DrawFetchResult::FAILURE)
+        ->and($result->failureReason)->toBe('The lottery draw provider returned invalid JSON.')
+        ->and($result->safeContext)->toBe(['category' => 'invalid_payload']);
+});
 
 it('keeps a non-empty response list for the normalizer to reject later', function (): void {
     $payload = [['fecha_sorteo' => '2099-01-01', 'premios' => '12-34-56']];
@@ -68,6 +84,18 @@ it('rejects historical, range, and reconciliation requests before making an HTTP
 ]);
 
 it('classifies a connection timeout without leaking its request URL', function (): void {
+    $logger = new class extends AbstractLogger
+    {
+        /** @var list<array{level: mixed, message: mixed, context: array<mixed>}> */
+        public array $records = [];
+
+        /** @param array<mixed> $context */
+        public function log($level, $message, array $context = []): void
+        {
+            $this->records[] = compact('level', 'message', 'context');
+        }
+    };
+    Log::swap($logger);
     Http::fake(static fn (): never => throw new ConnectionException('Connection timed out for https://api.elboletoganador.com/api/sorteos/test-provider-key/4'));
 
     $result = $this->provider->fetch(httpDrawRequest());
@@ -75,7 +103,8 @@ it('classifies a connection timeout without leaking its request URL', function (
     expect($result->status)->toBe(DrawFetchResult::FAILURE)
         ->and($result->failureReason)->toBe('The lottery draw provider request timed out.')
         ->and($result->safeContext)->toBe(['category' => 'timeout'])
-        ->and(json_encode($result, JSON_THROW_ON_ERROR))->not->toContain($this->apiKey);
+        ->and(json_encode($result, JSON_THROW_ON_ERROR))->not->toContain($this->apiKey)
+        ->and(json_encode($logger->records, JSON_THROW_ON_ERROR))->not->toContain($this->apiKey);
 });
 
 it('classifies HTTP failures without treating 404 as pending', function (int $status, string $category): void {

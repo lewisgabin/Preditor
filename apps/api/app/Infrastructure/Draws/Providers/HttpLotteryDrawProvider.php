@@ -14,6 +14,7 @@ use DateTimeZone;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use JsonException;
 use Throwable;
 
 final readonly class HttpLotteryDrawProvider implements LotteryDrawProvider
@@ -57,7 +58,11 @@ final readonly class HttpLotteryDrawProvider implements LotteryDrawProvider
                 return $this->failure($this->httpFailure($response));
             }
 
-            $payload = $response->json();
+            try {
+                $payload = json_decode($response->body(), true, 512, JSON_THROW_ON_ERROR);
+            } catch (JsonException) {
+                return $this->failure(new SafeProviderException('The lottery draw provider returned invalid JSON.', $response->status(), ['category' => 'invalid_payload']));
+            }
 
             if ($payload === null || $payload === []) {
                 return DrawFetchResult::notAvailable();
