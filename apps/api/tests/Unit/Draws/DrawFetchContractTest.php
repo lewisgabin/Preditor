@@ -69,6 +69,54 @@ it('exposes explicit fetch result states', function (): void {
         ->and(DrawFetchResult::FAILURE)->toBe('failure');
 });
 
+it('builds an available result with sanitized array payloads', function (): void {
+    $result = DrawFetchResult::available([['draw_id' => 'fixture-1', 'results' => ['00', '01', '09']]]);
+
+    expect($result->status)->toBe(DrawFetchResult::AVAILABLE)
+        ->and($result->payloads)->toBe([['draw_id' => 'fixture-1', 'results' => ['00', '01', '09']]])
+        ->and($result->failureReason)->toBeNull()
+        ->and($result->httpStatus)->toBeNull()
+        ->and($result->safeContext)->toBe([]);
+});
+
+it('builds a not available result without payloads or failure details', function (): void {
+    $result = DrawFetchResult::notAvailable();
+
+    expect($result->status)->toBe(DrawFetchResult::NOT_AVAILABLE)
+        ->and($result->payloads)->toBe([])
+        ->and($result->failureReason)->toBeNull()
+        ->and($result->httpStatus)->toBeNull()
+        ->and($result->safeContext)->toBe([]);
+});
+
+it('builds a failure result with an optional status and sanitized context', function (): void {
+    $result = DrawFetchResult::failure('The provider timed out.', 504, [
+        'provider_code' => 'gateway_timeout',
+        'api_token' => 'must-not-leak',
+    ]);
+
+    expect($result->status)->toBe(DrawFetchResult::FAILURE)
+        ->and($result->payloads)->toBe([])
+        ->and($result->failureReason)->toBe('The provider timed out.')
+        ->and($result->httpStatus)->toBe(504)
+        ->and($result->safeContext)->toBe([
+            'provider_code' => 'gateway_timeout',
+            'api_token' => '[redacted]',
+        ]);
+});
+
+it('rejects invalid payloads and state combinations', function (string $status, array $payloads, ?string $reason, ?int $httpStatus, array $safeContext): void {
+    new DrawFetchResult($status, $payloads, $reason, $httpStatus, $safeContext);
+})->with([
+    'available without payloads' => [DrawFetchResult::AVAILABLE, [], null, null, []],
+    'available with failure details' => [DrawFetchResult::AVAILABLE, [['draw_id' => 'fixture-1']], 'Unexpected failure', null, []],
+    'not available with payloads' => [DrawFetchResult::NOT_AVAILABLE, [['draw_id' => 'fixture-1']], null, null, []],
+    'not available with failure details' => [DrawFetchResult::NOT_AVAILABLE, [], 'Unexpected failure', 500, []],
+    'failure without reason' => [DrawFetchResult::FAILURE, [], null, 500, []],
+    'failure with payloads' => [DrawFetchResult::FAILURE, [['draw_id' => 'fixture-1']], 'Unexpected failure', 500, []],
+    'non array payload element' => [DrawFetchResult::AVAILABLE, ['not-an-array'], null, null, []],
+])->throws(InvalidArgumentException::class);
+
 it('declares provider capabilities for current, date and range fetches', function (): void {
     $capabilities = new DrawProviderCapabilities(current: true, date: false, range: true);
 
