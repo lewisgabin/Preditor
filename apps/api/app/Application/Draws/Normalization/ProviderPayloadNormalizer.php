@@ -222,6 +222,10 @@ final readonly class ProviderPayloadNormalizer
             return ['type' => 'object', 'class' => $value::class];
         }
 
+        if (is_string($value)) {
+            return $this->sanitizeString($value);
+        }
+
         if (is_float($value) && ! is_finite($value)) {
             return ['type' => 'non_finite_float'];
         }
@@ -232,6 +236,13 @@ final readonly class ProviderPayloadNormalizer
     private function sensitiveKey(string $key): bool
     {
         return preg_match('/authorization|cookie|password|secret|token|api[-_]?key/i', $key) === 1;
+    }
+
+    private function sanitizeString(string $value): string
+    {
+        $sanitized = preg_replace('~/api/sorteos/[^/?#]+/~', '/api/sorteos/[REDACTED]/', $value) ?? $value;
+
+        return preg_replace('/([?&](?:api[_-]?key|token|secret|password)=)[^&#\s]*/i', '$1[REDACTED]', $sanitized) ?? $sanitized;
     }
 
     /** @param array<string, mixed> $rawPayload */

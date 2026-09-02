@@ -56,12 +56,15 @@ it('rejects an unknown lottery without attempting to create it', function (): vo
         ->and($result->lotteryExternalId)->toBe(999);
 });
 
-it('sanitizes nested secret-bearing values and non-JSON values in failures', function (): void {
-    $payload = providerPayload(['premios' => '04-00-105', 'token' => 'never-persist-me', 'nested' => ['api_key' => 'also-redacted'], 'invalid' => new stdClass]);
+it('sanitizes nested secret-bearing values, reflected URLs, and non-JSON values in failures', function (): void {
+    $providerKey = 'never-persist-me';
+    $payload = providerPayload(['premios' => '04-00-105', 'token' => $providerKey, 'detalle' => 'https://api.elboletoganador.com/api/sorteos/'.$providerKey.'/4', 'nested' => ['api_key' => 'also-redacted'], 'invalid' => new stdClass]);
     $result = $this->normalizer->normalize($payload, 'elboletoganador', 4, $this->receivedAt);
 
     expect($result)->toBeInstanceOf(NormalizedPayloadFailure::class)
         ->and($result->rawPayload['token'])->toBe('[REDACTED]')
+        ->and($result->rawPayload['detalle'])->toBe('https://api.elboletoganador.com/api/sorteos/[REDACTED]/4')
+        ->and(json_encode($result->rawPayload, JSON_THROW_ON_ERROR))->not->toContain($providerKey)
         ->and($result->rawPayload['nested']['api_key'])->toBe('[REDACTED]')
         ->and($result->rawPayload['invalid'])->toBe(['type' => 'object', 'class' => stdClass::class]);
 });
