@@ -116,3 +116,6 @@ de seguridad, nunca `migrate:fresh`.
 - Redis persistente según el nivel de recuperación requerido.
 - Prueba de restauración antes de validar operaciones con dinero.
 - Secretos y procedimiento de recuperación guardados fuera de Git.
+# Sorteos actuales
+
+Configure las variables `LOTTERY_SYNC_*` en Dokploy como secretos/variables de entorno. No las agregue al Compose. Active la automatización únicamente después de comprobar el provider; el scheduler ejecuta el dispatcher y Redis evita duplicados.

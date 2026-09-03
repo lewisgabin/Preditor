@@ -74,3 +74,6 @@ origen. No necesita una URL privada incrustada en el bundle.
 si ejecuta Artisan fuera de Docker, genere una clave local y nunca versione `.env`.
 Las credenciales `local_only` y `test_only` de Compose son públicas, deterministas y
 exclusivas de entornos locales aislados; no sirven para producción.
+# Sincronización de sorteos actuales
+
+Mantenga `LOTTERY_SYNC_AUTOMATIC_ENABLED=false` hasta que el provider real esté configurado. En local use `LOTTERY_SYNC_PROVIDER=fake`; en producción, el provider real recibe su clave desde variables de entorno y nunca desde Git. La API real solo incorpora o corrige el sorteo actual; no importa historial.

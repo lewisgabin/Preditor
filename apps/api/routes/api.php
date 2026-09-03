@@ -2,8 +2,12 @@
 
 use App\Http\Controllers\Api\V1\AuthController;
 use App\Http\Controllers\Api\V1\DrawController;
+use App\Http\Controllers\Api\V1\DrawQuarantineController;
 use App\Http\Controllers\Api\V1\LotteryController;
+use App\Http\Controllers\Api\V1\ManualSyncRunController;
+use App\Http\Controllers\Api\V1\SyncErrorController;
 use App\Http\Controllers\Api\V1\SyncRunController;
+use App\Http\Controllers\Api\V1\SyncStatusController;
 use App\Http\Controllers\HealthController;
 use Illuminate\Support\Facades\Route;
 
@@ -25,4 +29,9 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
     Route::get('/draws/{draw}', [DrawController::class, 'show'])->name('draws.show');
     Route::get('/sync-runs', [SyncRunController::class, 'index'])->name('sync-runs.index');
     Route::get('/sync-runs/{syncRun}', [SyncRunController::class, 'show'])->name('sync-runs.show');
+    Route::get('/sync-status', SyncStatusController::class)->name('sync-status');
+    Route::post('/sync-runs', [ManualSyncRunController::class, 'store'])->middleware('throttle:60,1')->name('sync-runs.store');
+    Route::get('/sync-errors', [SyncErrorController::class, 'index'])->name('sync-errors.index');
+    Route::patch('/sync-errors/{syncError}/resolve', [SyncErrorController::class, 'resolve'])->name('sync-errors.resolve');
+    Route::get('/draw-quarantines', [DrawQuarantineController::class, 'index'])->name('draw-quarantines.index');
 });

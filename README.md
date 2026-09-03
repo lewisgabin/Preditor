@@ -118,3 +118,6 @@ Los archivos de análisis (`.xlsx`, `.zip` y dumps SQL) quedan fuera de las imá
 y no se importan automáticamente. La base histórica aportada contiene datos de
 sorteos de fases futuras y se conserva intacta para un proceso posterior de perfilado,
 normalización e importación idempotente.
+# QuinielaLab
+
+La operación de sorteos actuales está disponible en `/sorteos`. Consulte `docs/phases/PHASE_01C_DRAW_OPERATIONS.md` para configurar el provider fake o real sin importar historial.

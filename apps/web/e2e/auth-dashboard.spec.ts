@@ -88,5 +88,11 @@ test('el propietario inicia sesión y consulta el dashboard', async ({ page, req
   })
   expect(profileResponse.status).toBe(200)
   expect(profileResponse.payload).toMatchObject({ data: { email } })
+
+  await page.getByRole('button', { name: 'Sorteos', exact: true }).click()
+  await expect(page).toHaveURL('/sorteos')
+  await expect(page.getByRole('heading', { name: 'Sorteos', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Sincronizar todas', exact: true })).toBeVisible()
+  await expect(page.locator('section').filter({ has: page.getByRole('button', { name: 'Sincronizar', exact: true }) }).getByRole('button', { name: 'Sincronizar', exact: true })).toHaveCount(10)
   expect(consoleErrors).toEqual([])
 })
