@@ -53,6 +53,19 @@ it('requires authentication for the operational status and accepts manual sync',
     $this->postJson('/api/v1/sync-runs', ['lottery_external_ids' => [999]])->assertUnprocessable();
 });
 
+it('treats an empty manual lottery list as all active lotteries', function (): void {
+    Sanctum::actingAs(User::factory()->create());
+    Lottery::factory()->create(['external_id' => 4]);
+    Lottery::factory()->create(['external_id' => 5]);
+    Queue::fake();
+
+    $this->postJson('/api/v1/sync-runs', ['lottery_external_ids' => []])
+        ->assertAccepted()
+        ->assertJsonCount(2, 'data.sync_run_uuids');
+
+    Queue::assertPushed(SyncLotteryDrawsJob::class, 2);
+});
+
 it('does not duplicate a manual run while one is queued', function (): void {
     Sanctum::actingAs(User::factory()->create());
     $lottery = Lottery::factory()->create(['external_id' => 4]);
@@ -61,6 +74,24 @@ it('does not duplicate a manual run while one is queued', function (): void {
 
     $this->postJson('/api/v1/sync-runs', ['lottery_external_ids' => [4]])->assertAccepted()->assertJsonPath('data.sync_run_uuids', []);
     expect(SyncRun::query()->count())->toBe(1)->and(SyncRun::query()->sole()->status)->toBe(SyncRunStatus::Queued);
+});
+
+it('recovers a stale queued run and allows a replacement without touching history', function (): void {
+    Queue::fake();
+    config()->set('lottery-sync.automatic_enabled', true);
+    config()->set('lottery-sync.provider', 'fake');
+    config()->set('lottery-sync.stale_after_minutes', 20);
+    $lottery = Lottery::factory()->create(['external_id' => 4]);
+    $historical = Draw::factory()->for($lottery)->create(['draw_date_local' => '2024-01-01']);
+    $stale = SyncRun::factory()->for($lottery)->queued()->create(['provider' => 'fake', 'created_at' => now()->subMinutes(21)]);
+
+    $this->artisan('draws:dispatch-current')->assertSuccessful();
+
+    expect($stale->fresh()->status)->toBe(SyncRunStatus::Failed)
+        ->and($stale->fresh()->metadata['stale_recovered'])->toBeTrue()
+        ->and(Draw::query()->findOrFail($historical->id)->draw_date_local->toDateString())->toBe('2024-01-01')
+        ->and(SyncRun::query()->count())->toBe(2);
+    Queue::assertPushed(SyncLotteryDrawsJob::class, 1);
 });
 
 it('filters errors and resolves them idempotently', function (): void {

@@ -33,7 +33,7 @@ class SyncStatusController extends Controller
                 $openErrors = SyncError::query()->where('lottery_id', $lottery->id)->whereNull('resolved_at')->count();
                 $openQuarantines = DrawQuarantine::query()->where('lottery_id', $lottery->id)->whereNull('resolved_at')->count();
                 $schedule = LotterySchedule::query()->where('lottery_id', $lottery->id)->where('is_active', true)->where('weekday', now('America/Santo_Domingo')->dayOfWeekIso)->whereDate('effective_from', '<=', $today)->where(fn ($query) => $query->whereNull('effective_to')->orWhereDate('effective_to', '>=', $today))->first();
-                $status = $todayDraw !== null ? 'updated' : ($latestRun?->status?->value === 'running' ? 'syncing' : ($openErrors > 0 ? 'error' : ($latestRun === null ? 'never_checked' : 'pending')));
+                $status = $todayDraw !== null ? 'updated' : (in_array($latestRun?->status?->value, ['queued', 'running'], true) ? 'syncing' : ($openErrors > 0 ? 'error' : ($latestRun === null ? 'never_checked' : 'pending')));
 
                 return [
                     'id' => $lottery->id, 'external_id' => $lottery->external_id, 'name' => $lottery->name, 'status' => $status,
@@ -46,6 +46,7 @@ class SyncStatusController extends Controller
         ]]);
     }
 
+    /** @return array{id: int, date: string|null, p1: string, p2: string, p3: string, received_at: mixed}|null */
     private function draw(?Draw $draw): ?array
     {
         return $draw === null ? null : ['id' => $draw->id, 'date' => $draw->draw_date_local?->toDateString(), 'p1' => (string) $draw->p1, 'p2' => (string) $draw->p2, 'p3' => (string) $draw->p3, 'received_at' => $draw->received_at];

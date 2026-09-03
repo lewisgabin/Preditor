@@ -15,11 +15,12 @@ class ManualSyncRunController extends Controller
     {
         $data = $request->validate(['lottery_external_ids' => ['sometimes', 'array'], 'lottery_external_ids.*' => ['integer', 'min:1']]);
         $ids = $data['lottery_external_ids'] ?? null;
+        $ids = $ids === [] ? null : $ids;
         if ($ids !== null && Lottery::query()->where('is_active', true)->whereIn('external_id', $ids)->count() !== count(array_unique($ids))) {
             return response()->json(['message' => 'Solo se permiten loterías activas registradas.'], 422);
         }
         $summary = $dispatcher->handle($ids, SyncTrigger::Manual);
 
-        return response()->json(['data' => ['sync_run_uuids' => $summary['run_uuids']]], 202);
+        return response()->json(['data' => ['sync_run_uuids' => $summary['run_uuids'], 'summary' => $summary]], 202);
     }
 }
