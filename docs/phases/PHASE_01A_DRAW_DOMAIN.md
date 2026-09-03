@@ -13,5 +13,10 @@ cierre y rango de vigencia. Ningún horario se deduce del nombre de la lotería.
 ## Datos operativos sensibles
 
 `raw_payload`, `metadata` y `safe_context` nunca pueden guardar tokens, cookies
-ni cabeceras de autorización. La sanitización de respuestas de proveedores y sus
-normalizadores pertenece a Fase 1B.
+ni cabeceras de autorización. Fase 1B aplica sanitización recursiva antes de
+persistir payloads, cuarentenas, errores o cuerpos no JSON: la clave en ruta y
+cualquier secreto se representan como `[REDACTED]`.
+
+La ingesta de Fase 1B conserva esta frontera: el proveedor real solo consulta el
+sorteo actual por lotería y los comandos son manuales. No añade scheduler,
+polling, interfaz React ni lógica de Fase 1C.

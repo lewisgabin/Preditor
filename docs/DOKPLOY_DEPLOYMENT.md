@@ -27,6 +27,10 @@ REDIS_HOST
 SESSION_DOMAIN
 SANCTUM_STATEFUL_DOMAINS
 CORS_ALLOWED_ORIGINS
+LOTTERY_API_ENABLED
+LOTTERY_API_PROVIDER
+LOTTERY_API_BASE_URL
+LOTTERY_API_KEY
 ```
 
 Variables opcionales con valores por defecto seguros:
@@ -47,6 +51,20 @@ IMAGE_TAG=latest
 compartido (por ejemplo, `.dominio.com`) y las listas de Sanctum/CORS deben contener
 el origen web exacto, sin comodines. Genere `APP_KEY` con `php artisan key:generate
 --show` en un entorno seguro.
+
+## Proveedor de sorteos de Fase 1B
+
+Conserve `LOTTERY_API_KEY` exclusivamente como secreto de Dokploy. El proveedor
+real usa una clave en la ruta, por lo que no debe aparecer en URLs, comandos,
+logs, metadata ni capturas; el adaptador la representa como `[REDACTED]`.
+
+Para una instalación sin red use `LOTTERY_API_ENABLED=false` y
+`LOTTERY_API_PROVIDER=fake`. Para el real use `LOTTERY_API_PROVIDER=elboletoganador`
+y configure base URL y clave en secretos; no se documentan sus valores. El real
+solo consulta el sorteo actual de una lotería por ejecución manual. No admite
+fecha, rango ni reconciliación. Reintenta de forma acotada red, timeout y HTTP
+408, 429 y 5xx; 429 respeta `Retry-After`. Autenticación y 4xx permanentes no se
+reintentan indefinidamente.
 
 ## Release y migraciones
 
@@ -79,6 +97,10 @@ Orden recomendado:
 Punto de partida, ajustable con métricas del VPS: API 0.5–1 CPU y 512 MB–1 GB;
 Horizon 0.5 CPU y 256–512 MB; web 128 MB; scheduler bajo consumo. Estos límites
 se documentan y no se fijan en el Compose para evitar restricciones irreversibles.
+
+El servicio `scheduler` existente mantiene el heartbeat de Fase 0. Fase 1B no
+registra polling ni comandos automáticos de sorteos; no los agregue en Dokploy
+hasta una fase posterior aprobada.
 
 ## Rollback
 
