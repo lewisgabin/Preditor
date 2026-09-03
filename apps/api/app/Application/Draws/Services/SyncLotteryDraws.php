@@ -5,6 +5,7 @@ namespace App\Application\Draws\Services;
 use App\Application\Draws\Data\DrawFetchRequest;
 use App\Application\Draws\Data\DrawFetchResult;
 use App\Application\Draws\Events\DrawSyncCompleted;
+use App\Application\Draws\Normalization\NormalizedPayloadFailure;
 use App\Application\Draws\Normalization\ProviderPayloadNormalizer;
 use App\Application\Draws\Persistence\PersistNormalizedDraw;
 use App\Domain\Draws\Enums\SyncErrorType;
@@ -18,6 +19,7 @@ use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use InvalidArgumentException;
 use Throwable;
 
 final readonly class SyncLotteryDraws
@@ -28,7 +30,8 @@ final readonly class SyncLotteryDraws
         private ProviderSecretSanitizer $sanitizer,
     ) {}
 
-    public function createRun(DrawFetchRequest $request): SyncRun
+    /** @param array<string, mixed> $metadata */
+    public function createRun(DrawFetchRequest $request, array $metadata = []): SyncRun
     {
         $lottery = Lottery::query()->where('external_id', $request->lotteryExternalId)->first();
 
@@ -40,8 +43,85 @@ final readonly class SyncLotteryDraws
             'requested_from' => $request->date ?? $request->rangeStart,
             'requested_to' => $request->date ?? $request->rangeEnd,
             'status' => SyncRunStatus::Queued,
-            'metadata' => [],
+            'metadata' => $metadata,
         ]);
+    }
+
+    /**
+     * Resolves the provider and rejects unsupported scopes before any SyncRun is
+     * created or any job can be dispatched.
+     */
+    public function validateRequest(DrawFetchRequest $request, bool $force = false): void
+    {
+        $provider = $this->providers->resolve($request->provider, $force);
+        $capabilities = $provider->capabilities();
+
+        if ($request->trigger->value === 'reconciliation' && ! $capabilities->range) {
+            throw new InvalidArgumentException('The selected lottery draw provider does not support reconciliation.');
+        }
+
+        if ($request->date !== null && ! $capabilities->date) {
+            throw new InvalidArgumentException('The selected lottery draw provider does not support date requests.');
+        }
+
+        if ($request->rangeStart !== null && ! $capabilities->range) {
+            throw new InvalidArgumentException('The selected lottery draw provider does not support date range requests.');
+        }
+
+        if ($request->date === null && $request->rangeStart === null && ! $capabilities->current) {
+            throw new InvalidArgumentException('The selected lottery draw provider does not support current draw requests.');
+        }
+    }
+
+    /**
+     * Executes the provider and normalizer without creating draws, corrections,
+     * quarantines, or domain events. A dry run deliberately never retries.
+     */
+    public function runDry(string $syncRunUuid, DrawFetchRequest $request): void
+    {
+        $run = $this->markRunning($syncRunUuid);
+
+        if ($run->status !== SyncRunStatus::Running) {
+            return;
+        }
+
+        try {
+            $result = $this->providers->resolve($request->provider)->fetch($request);
+        } catch (Throwable $exception) {
+            $this->recordFailure($run, 1, $exception->getMessage(), null, ['category' => 'network']);
+            $this->finish($run->uuid, SyncRunStatus::Failed, [], false);
+
+            return;
+        }
+
+        if ($result->status === DrawFetchResult::FAILURE) {
+            $this->recordFailure($run, 1, (string) $result->failureReason, $result->httpStatus, $result->safeContext);
+            $this->finish($run->uuid, SyncRunStatus::Failed, [], false);
+
+            return;
+        }
+
+        if ($result->status === DrawFetchResult::NOT_AVAILABLE) {
+            $this->finish($run->uuid, SyncRunStatus::Succeeded, ['result_pending' => true], false);
+
+            return;
+        }
+
+        $normalizer = $this->normalizer();
+        $invalid = false;
+        foreach ($result->payloads as $payload) {
+            SyncRun::query()->whereKey($run->id)->increment('items_received');
+            $normalized = $normalizer->normalize($payload, $request->provider, $request->lotteryExternalId, new DateTimeImmutable('now'));
+            if ($normalized instanceof NormalizedPayloadFailure) {
+                $invalid = true;
+                $this->recordFailure($run, 1, $normalized->message, null, [
+                    'category' => 'invalid_payload',
+                    'error_code' => $normalized->code,
+                ]);
+            }
+        }
+
+        $this->finish($run->uuid, $invalid ? SyncRunStatus::Failed : SyncRunStatus::Succeeded, ['result_pending' => false], false);
     }
 
     /** @throws SafeProviderException */
@@ -77,10 +157,7 @@ final readonly class SyncLotteryDraws
             return;
         }
 
-        $normalizer = new ProviderPayloadNormalizer(
-            static fn (int $externalId): bool => Lottery::query()->where('external_id', $externalId)->exists(),
-            $this->sanitizer,
-        );
+        $normalizer = $this->normalizer();
 
         $hadSuccess = false;
         $hadQuarantine = false;
@@ -128,6 +205,14 @@ final readonly class SyncLotteryDraws
         });
     }
 
+    private function normalizer(): ProviderPayloadNormalizer
+    {
+        return new ProviderPayloadNormalizer(
+            static fn (int $externalId): bool => Lottery::query()->where('external_id', $externalId)->exists(),
+            $this->sanitizer,
+        );
+    }
+
     /** @param array<string, mixed> $context */
     private function recordFailure(SyncRun $run, int $attempt, string $message, ?int $httpStatus, array $context): void
     {
@@ -152,9 +237,9 @@ final readonly class SyncLotteryDraws
     }
 
     /** @param array<string, mixed> $metadata */
-    private function finish(string $syncRunUuid, SyncRunStatus $status, array $metadata = []): void
+    private function finish(string $syncRunUuid, SyncRunStatus $status, array $metadata = [], bool $dispatchCompletedEvent = true): void
     {
-        DB::transaction(function () use ($syncRunUuid, $status, $metadata): void {
+        DB::transaction(function () use ($syncRunUuid, $status, $metadata, $dispatchCompletedEvent): void {
             $run = SyncRun::query()->where('uuid', $syncRunUuid)->lockForUpdate()->firstOrFail();
             if (in_array($run->status, [SyncRunStatus::Succeeded, SyncRunStatus::Partial, SyncRunStatus::Failed], true)) {
                 return;
@@ -167,8 +252,10 @@ final readonly class SyncLotteryDraws
                 'duration_ms' => max(0, now()->diffInMilliseconds($startedAt)),
                 'metadata' => array_merge($run->metadata ?? [], $metadata),
             ]);
-            $completed = $run->fresh();
-            DB::afterCommit(static fn () => event(new DrawSyncCompleted($completed)));
+            if ($dispatchCompletedEvent) {
+                $completed = $run->fresh();
+                DB::afterCommit(static fn () => event(new DrawSyncCompleted($completed)));
+            }
         });
     }
 
