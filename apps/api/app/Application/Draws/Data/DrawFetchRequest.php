@@ -15,6 +15,7 @@ final readonly class DrawFetchRequest
         public ?DateTimeImmutable $date = null,
         public ?DateTimeImmutable $rangeStart = null,
         public ?DateTimeImmutable $rangeEnd = null,
+        public bool $force = false,
     ) {
         if ($this->lotteryExternalId <= 0) {
             throw new InvalidArgumentException('The lottery external ID must be positive.');
@@ -30,6 +31,10 @@ final readonly class DrawFetchRequest
 
         if ($this->rangeStart !== null && $this->rangeEnd !== null && $this->rangeStart > $this->rangeEnd) {
             throw new InvalidArgumentException('The date range start cannot be after its end.');
+        }
+
+        if ($this->force && $this->trigger !== SyncTrigger::Manual) {
+            throw new InvalidArgumentException('Force is only available for manual synchronization.');
         }
     }
 }

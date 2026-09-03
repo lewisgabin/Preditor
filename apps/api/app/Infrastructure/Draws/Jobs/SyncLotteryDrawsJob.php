@@ -20,8 +20,6 @@ final class SyncLotteryDrawsJob implements ShouldQueue
 
     public int $timeout = 60;
 
-    private ?int $retryAfterSeconds = null;
-
     public function __construct(public string $syncRunUuid, public DrawFetchRequest $request)
     {
         $this->onQueue('draw-sync');
@@ -37,7 +35,7 @@ final class SyncLotteryDrawsJob implements ShouldQueue
     {
         $fallback = max(1, (int) config('lottery-api.retry_backoff_seconds', 5));
 
-        return [$this->retryAfterSeconds ?? $fallback, $fallback * 2, $fallback * 4];
+        return [$fallback, $fallback * 2, $fallback * 4];
     }
 
     /** @return list<string> */
@@ -60,8 +58,21 @@ final class SyncLotteryDrawsJob implements ShouldQueue
 
             throw new SafeProviderException('The draw synchronization lock timed out.', safeContext: ['category' => 'lock_contention']);
         } catch (SafeProviderException $exception) {
-            $this->retryAfterSeconds = $this->retryAfter($exception);
             if (! $this->isRetryable($exception)) {
+                $sync->finishFailure($this->syncRunUuid);
+                $this->fail($exception);
+
+                return;
+            }
+
+            $retryAfter = $this->retryAfter($exception);
+            if ($retryAfter !== null && $this->attempts() < $this->tries()) {
+                $this->release($retryAfter);
+
+                return;
+            }
+
+            if ($this->attempts() >= $this->tries()) {
                 $sync->finishFailure($this->syncRunUuid);
                 $this->fail($exception);
 
@@ -109,6 +120,14 @@ final class SyncLotteryDrawsJob implements ShouldQueue
 
         $retryAfter = $exception->safeContext['retry_after'] ?? null;
 
-        return is_numeric($retryAfter) ? max(1, (int) $retryAfter) : null;
+        if (is_int($retryAfter)) {
+            return $retryAfter > 0 ? $retryAfter : null;
+        }
+
+        if (is_string($retryAfter) && preg_match('/^[1-9][0-9]*$/D', $retryAfter) === 1) {
+            return (int) $retryAfter;
+        }
+
+        return null;
     }
 }

@@ -48,13 +48,42 @@ it('makes two deliveries for one run idempotent and uses the draw-sync queue', f
         ->and($run->items_unchanged)->toBe(0);
 });
 
-it('exposes a safe retry-after delay for a rate-limited provider failure', function (): void {
-    $job = new SyncLotteryDrawsJob('00000000-0000-4000-8000-000000000000', new DrawFetchRequest('fake', 4, SyncTrigger::Manual));
-    $method = new ReflectionMethod($job, 'retryAfter');
+it('releases a rate-limited job using the provider retry-after delay', function (): void {
+    Lottery::factory()->create(['external_id' => 4]);
+    $sync = new SyncLotteryDraws(
+        new LotteryDrawProviderResolver(['fake' => new FakeLotteryDrawProvider(defaultResult: DrawFetchResult::failure('rate limited', 429, ['retry_after' => '17', 'token' => 'sync-test-secret']))], 'fake', true),
+        app(PersistNormalizedDraw::class),
+        new ProviderSecretSanitizer('sync-test-secret'),
+    );
+    $request = new DrawFetchRequest('fake', 4, SyncTrigger::Manual);
+    $run = $sync->createRun($request);
+    $job = (new SyncLotteryDrawsJob($run->uuid, $request))->withFakeQueueInteractions();
 
-    $delay = $method->invoke($job, new SafeProviderException('rate limited', 429, ['retry_after' => '17']));
+    $job->handle($sync);
 
-    expect($delay)->toBe(17);
+    $job->assertReleased(17)->assertNotFailed();
+    $run->refresh();
+    expect($run->status->value)->toBe('running')
+        ->and(SyncError::query()->count())->toBe(1)
+        ->and(SyncError::query()->sole()->attempt)->toBe(1)
+        ->and(json_encode(SyncError::query()->sole()->safe_context, JSON_THROW_ON_ERROR))->not->toContain('sync-test-secret');
+});
+
+it('executes a forced current job while the provider is disabled', function (): void {
+    Lottery::factory()->create(['external_id' => 4]);
+    $sync = new SyncLotteryDraws(
+        new LotteryDrawProviderResolver(['fake' => new FakeLotteryDrawProvider(defaultResult: DrawFetchResult::available([jobPayload()]))], 'fake', false),
+        app(PersistNormalizedDraw::class),
+        new ProviderSecretSanitizer,
+    );
+    $request = new DrawFetchRequest('fake', 4, SyncTrigger::Manual, force: true);
+    $run = $sync->createRun($request);
+
+    (new SyncLotteryDrawsJob($run->uuid, $request))->handle($sync);
+
+    $run->refresh();
+    expect(Draw::query()->count())->toBe(1)
+        ->and($run->status->value)->toBe('succeeded');
 });
 
 it('uses a real Redis lock to serialize a shared draw scope', function (): void {
