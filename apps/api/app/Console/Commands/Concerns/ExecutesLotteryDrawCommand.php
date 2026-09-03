@@ -27,8 +27,8 @@ trait ExecutesLotteryDrawCommand
             }
 
             foreach ($lotteries as $externalId) {
-                $request = new DrawFetchRequest($provider, $externalId, $this->trigger(), $date, $rangeStart, $rangeEnd);
-                $sync->validateRequest($request, $force);
+                $request = new DrawFetchRequest($provider, $externalId, $this->trigger(), $date, $rangeStart, $rangeEnd, $force);
+                $sync->validateRequest($request);
             }
         } catch (Throwable $exception) {
             $this->error($this->safeMessage($exception));
@@ -37,7 +37,7 @@ trait ExecutesLotteryDrawCommand
         }
 
         foreach ($lotteries as $externalId) {
-            $request = new DrawFetchRequest($provider, $externalId, $this->trigger(), $date, $rangeStart, $rangeEnd);
+            $request = new DrawFetchRequest($provider, $externalId, $this->trigger(), $date, $rangeStart, $rangeEnd, $force);
             $dryRun = (bool) $this->option('dry-run');
             $run = $sync->createRun($request, $dryRun ? ['dry_run' => true] : []);
 

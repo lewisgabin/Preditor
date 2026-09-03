@@ -51,9 +51,9 @@ final readonly class SyncLotteryDraws
      * Resolves the provider and rejects unsupported scopes before any SyncRun is
      * created or any job can be dispatched.
      */
-    public function validateRequest(DrawFetchRequest $request, bool $force = false): void
+    public function validateRequest(DrawFetchRequest $request): void
     {
-        $provider = $this->providers->resolve($request->provider, $force);
+        $provider = $this->providers->resolve($request->provider, $request->force);
         $capabilities = $provider->capabilities();
 
         if ($request->trigger->value === 'reconciliation' && ! $capabilities->range) {
@@ -86,7 +86,7 @@ final readonly class SyncLotteryDraws
         }
 
         try {
-            $result = $this->providers->resolve($request->provider)->fetch($request);
+            $result = $this->providers->resolve($request->provider, $request->force)->fetch($request);
         } catch (Throwable $exception) {
             $this->recordFailure($run, 1, $exception->getMessage(), null, ['category' => 'network']);
             $this->finish($run->uuid, SyncRunStatus::Failed, [], false);
@@ -134,7 +134,7 @@ final readonly class SyncLotteryDraws
         }
 
         try {
-            $result = $this->providers->resolve($request->provider)->fetch($request);
+            $result = $this->providers->resolve($request->provider, $request->force)->fetch($request);
         } catch (Throwable $exception) {
             $this->recordFailure($run, $attempt, $exception->getMessage(), null, ['category' => 'network']);
 

@@ -42,6 +42,28 @@ it('queues a current fake provider request through the existing orchestrator', f
     Queue::assertPushed(SyncLotteryDrawsJob::class, static fn (SyncLotteryDrawsJob $job): bool => $job->syncRunUuid === $run->uuid && $job->request->lotteryExternalId === 4);
 });
 
+it('rejects a disabled provider without force before creating a run', function (): void {
+    Queue::fake();
+    commandProvider(new FakeLotteryDrawProvider(defaultResult: DrawFetchResult::notAvailable()), false);
+
+    $this->artisan('draws:sync', ['--provider' => 'fake', '--lottery' => '4'])
+        ->assertFailed();
+
+    expect(SyncRun::query()->count())->toBe(0);
+    Queue::assertNothingPushed();
+});
+
+it('preserves force on a queued current request while the provider is disabled', function (): void {
+    Queue::fake();
+    commandProvider(new FakeLotteryDrawProvider(defaultResult: DrawFetchResult::notAvailable()), false);
+
+    $this->artisan('draws:sync', ['--provider' => 'fake', '--lottery' => '4', '--force' => true])
+        ->assertSuccessful();
+
+    expect(SyncRun::query()->sole()->status)->toBe(SyncRunStatus::Queued);
+    Queue::assertPushed(SyncLotteryDrawsJob::class, static fn (SyncLotteryDrawsJob $job): bool => $job->request->force === true);
+});
+
 it('allows fake historical ranges and uses the reconciliation trigger', function (): void {
     Queue::fake();
     commandProvider(new FakeLotteryDrawProvider(defaultResult: DrawFetchResult::notAvailable()));
@@ -99,6 +121,20 @@ it('does not let force bypass real provider capabilities', function (): void {
     Queue::assertNothingPushed();
 });
 
+it('runs a forced dry run while the provider is disabled', function (): void {
+    Queue::fake();
+    commandProvider(new FakeLotteryDrawProvider(defaultResult: DrawFetchResult::available([commandPayload()])), false);
+
+    $this->artisan('draws:sync', ['--provider' => 'fake', '--lottery' => '4', '--dry-run' => true, '--force' => true])
+        ->assertSuccessful();
+
+    $run = SyncRun::query()->sole();
+    expect($run->status)->toBe(SyncRunStatus::Succeeded)
+        ->and($run->metadata['dry_run'])->toBeTrue()
+        ->and($run->items_received)->toBe(1);
+    Queue::assertNothingPushed();
+});
+
 it('runs dry mode without queueing or persisting draw effects', function (): void {
     Queue::fake();
     Event::fake([DrawConfirmed::class, DrawCorrected::class, DrawQuarantined::class, DrawSyncCompleted::class]);
@@ -146,9 +182,9 @@ it('fails a dry run with a sanitized sync error for invalid payloads', function 
     Queue::assertNothingPushed();
 });
 
-function commandProvider(FakeLotteryDrawProvider $provider): void
+function commandProvider(FakeLotteryDrawProvider $provider, bool $enabled = true): void
 {
-    app()->instance(LotteryDrawProviderResolver::class, new LotteryDrawProviderResolver(['fake' => $provider], 'fake', true));
+    app()->instance(LotteryDrawProviderResolver::class, new LotteryDrawProviderResolver(['fake' => $provider], 'fake', $enabled));
 }
 
 /** @return array<string, mixed> */
