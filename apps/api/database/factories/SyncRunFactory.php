@@ -21,7 +21,7 @@ class SyncRunFactory extends Factory
 
     public function queued(): static
     {
-        return $this->state(['status' => SyncRunStatus::Queued, 'finished_at' => null, 'duration_ms' => null]);
+        return $this->state(['status' => SyncRunStatus::Queued, 'started_at' => null, 'finished_at' => null, 'duration_ms' => null]);
     }
 
     public function running(): static
