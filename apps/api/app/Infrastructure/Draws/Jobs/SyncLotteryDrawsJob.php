@@ -18,15 +18,13 @@ final class SyncLotteryDrawsJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    public string $queue = 'draw-sync';
-
     public int $timeout = 60;
 
     private ?int $retryAfterSeconds = null;
 
     public function __construct(public string $syncRunUuid, public DrawFetchRequest $request)
     {
-        $this->onQueue($this->queue);
+        $this->onQueue('draw-sync');
     }
 
     public function tries(): int
