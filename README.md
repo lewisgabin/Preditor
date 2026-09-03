@@ -1,9 +1,8 @@
 # QuinielaLab
 
 Aplicación privada para estudiar y auditar estrategias de lotería de forma
-reproducible. La Fase 0 entrega exclusivamente la fundación técnica: autenticación,
-observabilidad, infraestructura y controles de calidad. No calcula sorteos, señales,
-métodos, capital, backtesting ni palés.
+reproducible. Fase 1B añade una ingesta manual, auditable e idempotente de sorteos;
+no calcula métodos, señales, pagos, capital, backtesting ni palés.
 
 ## Arquitectura
 
@@ -71,6 +70,28 @@ La verificación completa no destructiva está en:
 ./scripts/verify-phase0.sh
 ```
 
+## Sincronización manual de sorteos (Fase 1B)
+
+El provider `fake` es seguro por defecto y no usa Internet:
+
+```bash
+docker compose exec api php artisan draws:sync --provider=fake --lottery=5 --dry-run
+```
+
+El real se habilita solo con variables configuradas fuera de Git. Consulta el
+sorteo actual y exige `--lottery` como ID externo; no admite fecha, rango ni
+reconciliación en esta fase:
+
+```bash
+docker compose exec api php artisan draws:sync --provider=elboletoganador --lottery=5
+```
+
+La clave nunca se coloca en comandos, documentación, URL compartida ni Git. Los
+secretos se muestran como `[REDACTED]`; repetir un resultado no crea duplicados,
+un cambio deja una corrección append-only y un payload inválido entra a
+cuarentena. Fase 1B no agenda sincronizaciones, no activa polling y no incorpora
+pantalla de sorteos. Consulte [la guía operativa de Fase 1B](docs/phases/PHASE_01B_DRAW_PROVIDER.md).
+
 ## Endpoints de Fase 0
 
 | Método | Ruta | Acceso | Propósito |
@@ -89,6 +110,7 @@ La verificación completa no destructiva está en:
 - [Arquitectura](docs/ARCHITECTURE.md)
 - [Reglas de dominio](docs/DOMAIN_RULES.md)
 - [Plan de Fase 0](docs/phases/PHASE_00_FOUNDATION.md)
+- [Proveedor de sorteos de Fase 1B](docs/phases/PHASE_01B_DRAW_PROVIDER.md)
 
 ## Datos aportados
 
