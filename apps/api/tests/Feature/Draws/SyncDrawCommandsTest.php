@@ -68,9 +68,9 @@ it('rejects unsupported real provider scopes before creating a run or dispatchin
     expect(SyncRun::query()->count())->toBe(0);
     Queue::assertNothingPushed();
 })->with([
-    'missing lottery' => ['--provider' => 'elboletoganador'],
-    'date' => ['--provider' => 'elboletoganador', '--lottery' => '4', '--date' => '2026-08-01'],
-    'range' => ['--provider' => 'elboletoganador', '--lottery' => '4', '--from' => '2026-08-01', '--to' => '2026-08-03'],
+    'missing lottery' => [['--provider' => 'elboletoganador']],
+    'date' => [['--provider' => 'elboletoganador', '--lottery' => '4', '--date' => '2026-08-01']],
+    'range' => [['--provider' => 'elboletoganador', '--lottery' => '4', '--from' => '2026-08-01', '--to' => '2026-08-03']],
 ]);
 
 it('rejects reconciliation for the real provider before it can make an HTTP request', function (): void {
