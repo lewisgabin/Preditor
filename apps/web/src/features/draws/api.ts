@@ -10,5 +10,5 @@ export const useRecentOperations = () => useQuery({ queryKey: ['draw-operations'
 
 export function useManualSync() {
   const queryClient = useQueryClient()
-  return useMutation({ mutationFn: (ids?: number[]) => apiRequest('/api/v1/sync-runs', { method: 'POST', body: JSON.stringify(ids ? { lottery_external_ids: ids } : {}) }), onSuccess: () => void queryClient.invalidateQueries({ queryKey: ['sync-status'] }) })
+  return useMutation({ mutationFn: (ids?: number[]) => apiRequest<{ data: { sync_run_uuids: string[] } }>('/api/v1/sync-runs', { method: 'POST', body: JSON.stringify(ids ? { lottery_external_ids: ids } : {}) }), onSuccess: () => Promise.all([queryClient.invalidateQueries({ queryKey: ['sync-status'] }), queryClient.invalidateQueries({ queryKey: ['draw-operations'] })]) })
 }

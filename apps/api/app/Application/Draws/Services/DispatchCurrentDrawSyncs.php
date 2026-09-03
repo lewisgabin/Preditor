@@ -3,20 +3,26 @@
 namespace App\Application\Draws\Services;
 
 use App\Application\Draws\Data\DrawFetchRequest;
+use App\Domain\Draws\Enums\SyncErrorType;
 use App\Domain\Draws\Enums\SyncRunStatus;
 use App\Domain\Draws\Enums\SyncTrigger;
 use App\Infrastructure\Draws\Jobs\SyncLotteryDrawsJob;
 use App\Infrastructure\Persistence\Eloquent\Models\Draw;
 use App\Infrastructure\Persistence\Eloquent\Models\Lottery;
+use App\Infrastructure\Persistence\Eloquent\Models\SyncError;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
 use DateTimeImmutable;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 final readonly class DispatchCurrentDrawSyncs
 {
     public function __construct(private SyncLotteryDraws $sync) {}
 
-    /** @param list<int>|null $externalIds @return array{evaluated:int,queued:int,available:int,in_progress:int,interval:int,configuration:int,run_uuids:list<string>} */
+    /**
+     * @param  list<int>|null  $externalIds
+     * @return array{evaluated: int, queued: int, available: int, in_progress: int, interval: int, configuration: int, run_uuids: list<string>}
+     */
     public function handle(?array $externalIds = null, SyncTrigger $trigger = SyncTrigger::Scheduled): array
     {
         $summary = ['evaluated' => 0, 'queued' => 0, 'available' => 0, 'in_progress' => 0, 'interval' => 0, 'configuration' => 0, 'run_uuids' => []];
@@ -44,7 +50,7 @@ final readonly class DispatchCurrentDrawSyncs
 
                     continue;
                 }
-                if (SyncRun::query()->where('lottery_id', $lottery->id)->where('provider', $provider)->whereIn('status', [SyncRunStatus::Queued, SyncRunStatus::Running])->exists()) {
+                if ($this->recoverStaleRun($lottery, $provider)) {
                     $summary['in_progress']++;
 
                     continue;
@@ -75,11 +81,34 @@ final readonly class DispatchCurrentDrawSyncs
             return false;
         }
 
+        if (! Draw::query()->where('lottery_id', $lottery->id)->whereDate('draw_date_local', $today->format('Y-m-d'))->exists()) {
+            return false;
+        }
+
         return ! SyncRun::query()
             ->where('lottery_id', $lottery->id)
             ->where('provider', $provider)
             ->where('metadata->purpose', 'final_recheck')
             ->where('metadata->local_date', $today->format('Y-m-d'))
             ->exists();
+    }
+
+    private function recoverStaleRun(Lottery $lottery, string $provider): bool
+    {
+        return DB::transaction(function () use ($lottery, $provider): bool {
+            $run = SyncRun::query()->where('lottery_id', $lottery->id)->where('provider', $provider)->whereIn('status', [SyncRunStatus::Queued, SyncRunStatus::Running])->lockForUpdate()->first();
+            if ($run === null) {
+                return false;
+            }
+            $cutoff = now()->subMinutes((int) config('lottery-sync.stale_after_minutes'));
+            if ($run->created_at->greaterThan($cutoff)) {
+                return true;
+            }
+            $metadata = array_merge($run->metadata ?? [], ['stale_detected_at' => now()->toIso8601String(), 'stale_after_minutes' => (int) config('lottery-sync.stale_after_minutes'), 'stale_recovered' => true]);
+            $run->update(['status' => SyncRunStatus::Failed, 'finished_at' => now(), 'metadata' => $metadata]);
+            SyncError::query()->firstOrCreate(['sync_run_id' => $run->id, 'type' => SyncErrorType::Unknown, 'message' => 'The draw synchronization run became stale.'], ['lottery_id' => $lottery->id, 'retryable' => true, 'attempt' => 1, 'safe_context' => ['category' => 'stale_run'], 'occurred_at' => now()]);
+
+            return false;
+        });
     }
 }
