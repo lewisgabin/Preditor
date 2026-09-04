@@ -125,16 +125,24 @@ it('preserves every persisted historical draw attribute through operational flow
     $lottery = Lottery::factory()->create(['external_id' => 4]);
     $historical = Draw::factory()->for($lottery)->create(['draw_date_local' => '2024-01-01', 'external_draw_id' => 'history-4', 'p1' => '04', 'p2' => '00', 'p3' => '97']);
     $before = $historical->getRawOriginal();
+    $beforeDate = $historical->draw_date_local?->toDateString();
     SyncRun::factory()->for($lottery)->queued()->create(['provider' => 'fake', 'created_at' => now()->subMinutes(21)]);
 
     $this->artisan('draws:dispatch-current')->assertSuccessful();
     Sanctum::actingAs(User::factory()->create());
     $this->postJson('/api/v1/sync-runs', ['lottery_external_ids' => [4]])->assertAccepted();
 
-    $after = Draw::query()->findOrFail($historical->id)->getRawOriginal();
-    foreach (['id', 'lottery_id', 'provider', 'external_draw_id', 'draw_date_local', 'scheduled_at_utc', 'drawn_at_utc', 'p1', 'p2', 'p3', 'status', 'source_hash', 'raw_payload', 'received_at', 'confirmed_at', 'corrected_at', 'created_at', 'updated_at'] as $attribute) {
+    $reloadedHistorical = Draw::query()->findOrFail($historical->id);
+    $after = $reloadedHistorical->getRawOriginal();
+    foreach (['id', 'lottery_id', 'provider', 'external_draw_id', 'scheduled_at_utc', 'drawn_at_utc', 'p1', 'p2', 'p3', 'status', 'source_hash', 'raw_payload', 'received_at', 'confirmed_at', 'corrected_at', 'created_at', 'updated_at'] as $attribute) {
         expect($after[$attribute])->toBe($before[$attribute]);
     }
+    expect($reloadedHistorical->draw_date_local?->toDateString())->toBe($beforeDate)
+        ->toBe('2024-01-01')
+        ->and($reloadedHistorical->p1->value())->toBe('04')
+        ->and($reloadedHistorical->p2->value())->toBe('00')
+        ->and($reloadedHistorical->p3->value())->toBe('97')
+        ->and($after['updated_at'])->toBe($before['updated_at']);
 });
 
 it('filters errors and resolves them idempotently', function (): void {
