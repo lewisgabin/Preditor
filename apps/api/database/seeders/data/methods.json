@@ -1,0 +1,242 @@
+[
+  {
+    "code": "P01",
+    "target": 4,
+    "source": 18,
+    "relation": "previous_day",
+    "operator": {
+      "type": "subtract_positions_mod_100",
+      "first": "P2",
+      "second": "P1"
+    },
+    "rule": "(P2 - P1) mod 100"
+  },
+  {
+    "code": "P02",
+    "target": 5,
+    "source": 15,
+    "relation": "previous_day",
+    "operator": {
+      "type": "add_constant_mod_100",
+      "first": "P2",
+      "constant": 10
+    },
+    "rule": "P2 + 10 mod 100"
+  },
+  {
+    "code": "P03",
+    "target": 6,
+    "source": 6,
+    "relation": "previous_day",
+    "operator": {
+      "type": "absolute_difference",
+      "first": "P1",
+      "second": "P3"
+    },
+    "rule": "abs(P1 - P3)"
+  },
+  {
+    "code": "P04",
+    "target": 12,
+    "source": 5,
+    "relation": "previous_day",
+    "operator": {
+      "type": "add_constant_mod_100",
+      "first": "P3",
+      "constant": 1
+    },
+    "rule": "P3 + 1 mod 100"
+  },
+  {
+    "code": "P05",
+    "target": 13,
+    "source": 20,
+    "relation": "previous_day",
+    "operator": {
+      "type": "add_constant_mod_100",
+      "first": "P2",
+      "constant": 10
+    },
+    "rule": "P2 + 10 mod 100"
+  },
+  {
+    "code": "P06",
+    "target": 15,
+    "source": 29,
+    "relation": "previous_day",
+    "operator": {
+      "type": "add_constant_mod_100",
+      "first": "P3",
+      "constant": 2
+    },
+    "rule": "P3 + 2 mod 100"
+  },
+  {
+    "code": "P07",
+    "target": 18,
+    "source": 5,
+    "relation": "previous_day",
+    "operator": {
+      "type": "concat_unit_digits",
+      "first": "P1",
+      "second": "P3"
+    },
+    "rule": "unidad(P1) + unidad(P3)"
+  },
+  {
+    "code": "P08",
+    "target": 20,
+    "source": 21,
+    "relation": "previous_day",
+    "operator": {
+      "type": "reverse_number",
+      "first": "P3"
+    },
+    "rule": "reverse(P3)"
+  },
+  {
+    "code": "P09",
+    "target": 21,
+    "source": 5,
+    "relation": "previous_day",
+    "operator": {
+      "type": "sum_positions_mod_100",
+      "first": "P1",
+      "second": "P3"
+    },
+    "rule": "(P1 + P3) mod 100"
+  },
+  {
+    "code": "P10",
+    "target": 29,
+    "source": 20,
+    "relation": "same_day",
+    "operator": {
+      "type": "subtract_constant_mod_100",
+      "first": "P1",
+      "constant": 5
+    },
+    "rule": "P1 - 5 mod 100"
+  },
+  {
+    "code": "A01",
+    "target": 4,
+    "source": 12,
+    "relation": "previous_day",
+    "operator": {
+      "type": "subtract_positions_mod_100",
+      "first": "P3",
+      "second": "P1"
+    },
+    "rule": "(P3 - P1) mod 100"
+  },
+  {
+    "code": "A02",
+    "target": 5,
+    "source": 29,
+    "relation": "same_day",
+    "operator": {
+      "type": "add_constant_mod_100",
+      "first": "P2",
+      "constant": 11
+    },
+    "rule": "P2 + 11 mod 100"
+  },
+  {
+    "code": "A03",
+    "target": 5,
+    "source": 20,
+    "relation": "same_day",
+    "operator": {
+      "type": "identity",
+      "first": "P2"
+    },
+    "rule": "P2"
+  },
+  {
+    "code": "A04",
+    "target": 6,
+    "source": 13,
+    "relation": "previous_day",
+    "operator": {
+      "type": "sum_positions_mod_100",
+      "first": "P1",
+      "second": "P3"
+    },
+    "rule": "(P1 + P3) mod 100"
+  },
+  {
+    "code": "A05",
+    "target": 12,
+    "source": 29,
+    "relation": "previous_day",
+    "operator": {
+      "type": "subtract_constant_mod_100",
+      "first": "P2",
+      "constant": 11
+    },
+    "rule": "P2 - 11 mod 100"
+  },
+  {
+    "code": "A06",
+    "target": 12,
+    "source": 6,
+    "relation": "previous_day",
+    "operator": {
+      "type": "subtract_positions_mod_100",
+      "first": "P1",
+      "second": "P2"
+    },
+    "rule": "(P1 - P2) mod 100"
+  },
+  {
+    "code": "A07",
+    "target": 18,
+    "source": 13,
+    "relation": "previous_day",
+    "operator": {
+      "type": "sum_positions_mod_100",
+      "first": "P1",
+      "second": "P3"
+    },
+    "rule": "(P1 + P3) mod 100"
+  },
+  {
+    "code": "A08",
+    "target": 18,
+    "source": 4,
+    "relation": "previous_day",
+    "operator": {
+      "type": "absolute_difference",
+      "first": "P1",
+      "second": "P3"
+    },
+    "rule": "abs(P1 - P3)"
+  },
+  {
+    "code": "A09",
+    "target": 18,
+    "source": 20,
+    "relation": "same_day",
+    "operator": {
+      "type": "concat_specific_digits",
+      "first": "P3",
+      "second": "P1",
+      "first_digit": 0,
+      "second_digit": 1
+    },
+    "rule": "decena(P3) + unidad(P1)"
+  },
+  {
+    "code": "A10",
+    "target": 20,
+    "source": 15,
+    "relation": "previous_day",
+    "operator": {
+      "type": "absolute_difference",
+      "first": "P1",
+      "second": "P2"
+    },
+    "rule": "abs(P1 - P2)"
+  }
+]

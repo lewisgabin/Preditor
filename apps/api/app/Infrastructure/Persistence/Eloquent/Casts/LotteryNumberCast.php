@@ -6,7 +6,7 @@ use App\Domain\Draws\ValueObjects\LotteryNumber;
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
 
-/** @implements CastsAttributes<LotteryNumber, string> */
+/** @implements CastsAttributes<LotteryNumber, LotteryNumber|int|string> */
 class LotteryNumberCast implements CastsAttributes
 {
     public function get(Model $model, string $key, mixed $value, array $attributes): LotteryNumber
@@ -16,6 +16,6 @@ class LotteryNumberCast implements CastsAttributes
 
     public function set(Model $model, string $key, mixed $value, array $attributes): string
     {
-        return (new LotteryNumber($value))->value();
+        return $value instanceof LotteryNumber ? $value->value() : (new LotteryNumber($value))->value();
     }
 }

@@ -5,6 +5,8 @@ use App\Http\Controllers\Api\V1\DrawController;
 use App\Http\Controllers\Api\V1\DrawQuarantineController;
 use App\Http\Controllers\Api\V1\LotteryController;
 use App\Http\Controllers\Api\V1\ManualSyncRunController;
+use App\Http\Controllers\Api\V1\MethodController;
+use App\Http\Controllers\Api\V1\SignalController;
 use App\Http\Controllers\Api\V1\SyncErrorController;
 use App\Http\Controllers\Api\V1\SyncRunController;
 use App\Http\Controllers\Api\V1\SyncStatusController;
@@ -34,4 +36,12 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
     Route::get('/sync-errors', [SyncErrorController::class, 'index'])->name('sync-errors.index');
     Route::patch('/sync-errors/{syncError}/resolve', [SyncErrorController::class, 'resolve'])->name('sync-errors.resolve');
     Route::get('/draw-quarantines', [DrawQuarantineController::class, 'index'])->name('draw-quarantines.index');
+});
+
+Route::prefix('v1')->middleware('auth:sanctum')->group(function (): void {
+    Route::get('/methods', [MethodController::class, 'index']);
+    Route::get('/methods/{method}', [MethodController::class, 'show']);
+    Route::get('/signals', [SignalController::class, 'index']);
+    Route::post('/signals/generate', [SignalController::class, 'generate'])->middleware('throttle:60,1');
+    Route::get('/signals/{signal}', [SignalController::class, 'show']);
 });

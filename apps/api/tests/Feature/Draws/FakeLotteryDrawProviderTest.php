@@ -2,6 +2,8 @@
 
 use App\Application\Draws\Data\DrawFetchRequest;
 use App\Application\Draws\Data\DrawFetchResult;
+use App\Application\Draws\Data\NormalizedDrawData;
+use App\Application\Draws\Normalization\ProviderPayloadNormalizer;
 use App\Domain\Draws\Enums\SyncTrigger;
 use App\Infrastructure\Draws\Providers\FakeLotteryDrawProvider;
 use App\Infrastructure\Draws\Providers\LotteryDrawProviderResolver;
@@ -93,6 +95,17 @@ it('is registered as the default fake provider', function (): void {
     $resolver = app(LotteryDrawProviderResolver::class);
 
     expect($resolver->resolve(force: true))->toBeInstanceOf(FakeLotteryDrawProvider::class);
+});
+
+it('returns a default payload accepted by the real normalizer', function (): void {
+    $payload = (new FakeLotteryDrawProvider)->fetch(drawRequest())->payloads[0];
+    $normalizer = new ProviderPayloadNormalizer(static fn (int $id): bool => $id === 4);
+    $normalized = $normalizer->normalize($payload, 'fake', 4, new DateTimeImmutable);
+
+    expect($normalized)->toBeInstanceOf(NormalizedDrawData::class)
+        ->and($normalized->p1->value())->toBe('04')
+        ->and($normalized->p2->value())->toBe('00')
+        ->and($normalized->p3->value())->toBe('97');
 });
 
 /** @return array<string, mixed> */

@@ -30,7 +30,7 @@ final readonly class FakeLotteryDrawProvider implements LotteryDrawProvider
     {
         if ($this->responder === null) {
             return $this->defaultResult ?? DrawFetchResult::available([[
-                'id' => sprintf('fake-%s-%d', (new DateTimeImmutable('now', new DateTimeZone('America/Santo_Domingo')))->format('Ymd'), $request->lotteryExternalId),
+                'id' => sprintf('%s%04d', (new DateTimeImmutable('now', new DateTimeZone('America/Santo_Domingo')))->format('Ymd'), $request->lotteryExternalId),
                 'loteria_id' => $request->lotteryExternalId,
                 'fecha_sorteo' => (new DateTimeImmutable('now', new DateTimeZone('America/Santo_Domingo')))->format('Y-m-d'),
                 'premios' => '04-00-97',

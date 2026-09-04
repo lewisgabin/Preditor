@@ -92,6 +92,8 @@ jobs:
       - run: docker compose up -d mysql redis
       - run: docker compose run --rm api php artisan migrate --isolated --force
       - run: docker compose up -d --wait
+      - run: docker compose exec -T api php artisan db:seed --class=LotterySeeder --force
+      - run: docker compose exec -T api php artisan db:seed --class=SignalFixtureSeeder --force
       - name: Crear propietario E2E efímero
         run: |
           password="Phase0-$(openssl rand -hex 12)!"
