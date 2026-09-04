@@ -86,7 +86,7 @@ La generación bloquea el método y la versión y crea señal y fuentes en una s
 transacción; la restricción única respalda la identidad. Repetir devuelve la
 señal existente incluso si cambió el draw. El snapshot conserva código, nombre,
 versión, ID real del draw, premios, argumentos, resultado, explicación y corte.
-La respuesta lee los premios del snapshot, nunca del draw vivo. Los modelos
+La respuesta lee los premios fuente del snapshot, nunca del draw vivo. Los modelos
 rechazan modificar el cálculo y sus fuentes. No hay recalculo por correcciones.
 
 ## Entradas y pantallas
@@ -112,7 +112,10 @@ Dry-run calcula y explica sin persistir. Ninguno de estos comandos consulta la
 API externa. La generación es explícita, sin nuevo scheduler de señales.
 
 Para E2E en una base local aislada: `php artisan db:seed --class=SignalFixtureSeeder`.
-Crea únicamente un draw de fixture identificado en 2001-01-01 y nunca reemplaza
-un draw existente. Está prohibido en producción y no forma parte del seeder global.
+Crea dos draws identificados: la fuente de 2001-01-01 y el resultado destino de
+2001-01-02, con coincidencias en segunda y tercera. Nunca reemplaza un draw
+existente. Está prohibido en producción y no forma parte del seeder global.
 
 La pantalla `/senales?date=YYYY-MM-DD` conserva la fecha al recargar y solicita automáticamente la generación idempotente al seleccionarla. Muestra un estado de preparación hasta recibir el resultado; no descarga sorteos ni sustituye fuentes ausentes.
+
+Cada señal expone `observed_result` cuando existe un único sorteo confirmado o corregido de su lotería y fecha destino. Incluye P1/P2/P3 y `matching_positions`; React resalta todas las coincidencias y sus posiciones. Esta lectura usa el resultado actual disponible y no modifica el snapshot ni utiliza el resultado destino para calcular la señal.

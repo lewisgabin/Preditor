@@ -101,11 +101,15 @@ test('sincroniza una lotería desde Sorteos mediante el provider fake', async ({
   const email = requiredEnvironmentVariable('E2E_EMAIL')
   const password = requiredEnvironmentVariable('E2E_PASSWORD')
   const consoleErrors: string[] = []
+  const anonymousProfileResponse = page.waitForResponse(response =>
+    new URL(response.url()).pathname === '/api/v1/auth/me',
+  )
+  await page.goto('/login')
+  expect((await anonymousProfileResponse).status()).toBe(401)
   page.on('console', (message) => {
     if (message.type() === 'error') consoleErrors.push(message.text())
   })
 
-  await page.goto('/login')
   await page.getByLabel('Correo electrónico').fill(email)
   await page.getByLabel('Contraseña').fill(password)
   await page.getByRole('button', { name: 'Entrar', exact: true }).click()

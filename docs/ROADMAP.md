@@ -59,6 +59,9 @@ Consumir la API existente de forma confiable.
 
 ## Fase 2 — Motor de métodos
 
+Estado: implementada y validada localmente. Incluye generación por fecha,
+resultados destino informativos y coincidencias por posición; sin liquidación.
+
 ### Objetivo
 
 Implementar métodos configurables y versionados.

@@ -124,7 +124,7 @@ it('preserves every persisted historical draw attribute through operational flow
     config()->set('lottery-sync.stale_after_minutes', 20);
     $lottery = Lottery::factory()->create(['external_id' => 4]);
     $historical = Draw::factory()->for($lottery)->create(['draw_date_local' => '2024-01-01', 'external_draw_id' => 'history-4', 'p1' => '04', 'p2' => '00', 'p3' => '97']);
-    $before = $historical->getRawOriginal();
+    $before = $historical->refresh()->getRawOriginal();
     $beforeDate = $historical->draw_date_local?->toDateString();
     SyncRun::factory()->for($lottery)->queued()->create(['provider' => 'fake', 'created_at' => now()->subMinutes(21)]);
 

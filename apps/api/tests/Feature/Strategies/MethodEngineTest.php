@@ -164,3 +164,16 @@ it('requires authentication', function (string $path) {
 it('requires authentication to generate', function () {
     $this->postJson('/api/v1/signals/generate', ['date' => '2026-09-04'])->assertUnauthorized();
 });
+
+it('shows the exact target result and all matches without changing the signal snapshot', function () {
+    methodFixture('P02');
+    $signal = app(GenerateSignal::class)(MethodCode::P02, '2026-09-04')['signal'];
+    $snapshot = $signal->refresh()->calculation_snapshot;
+    Sanctum::actingAs(User::factory()->create());
+    $this->getJson('/api/v1/signals/'.$signal->id)->assertOk()->assertJsonPath('data.observed_result', null);
+    $target = Draw::factory()->create(['lottery_id' => $signal->target_lottery_id, 'draw_date_local' => '2026-09-04', 'p1' => '14', 'p2' => '07', 'p3' => '07']);
+    $this->getJson('/api/v1/signals?date=2026-09-04')->assertOk()->assertJsonPath('data.0.observed_result.draw_id', $target->id)->assertJsonPath('data.0.observed_result.matching_positions', ['P2', 'P3']);
+    $target->update(['p2' => '31', 'p3' => '32', 'status' => 'corrected']);
+    $this->getJson('/api/v1/signals/'.$signal->id)->assertOk()->assertJsonPath('data.observed_result.matching_positions', []);
+    expect($signal->fresh()->calculation_snapshot)->toBe($snapshot);
+});

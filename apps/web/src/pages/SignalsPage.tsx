@@ -3,11 +3,32 @@ import { useSearchParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { localToday, useGenerateSignals, useSignals } from '@/features/strategies/api'
+import { localToday, useGenerateSignals, useSignals, type Signal } from '@/features/strategies/api'
 import { AppShell } from '@/shared/layout/AppShell'
 
 const statusLabels = { generated: 'Generada', expired: 'Vencida', cancelled: 'Cancelada' }
 const displayDate = (value: string) => value.split('-').reverse().join('/')
+
+const resultPositions = [
+  { key: 'p1', position: 'P1', label: 'Primera' },
+  { key: 'p2', position: 'P2', label: 'Segunda' },
+  { key: 'p3', position: 'P3', label: 'Tercera' },
+] as const
+
+function ObservedResult({ result }: { result: Signal['observed_result'] }) {
+  if (!result) return <p className="mb-5 text-sm text-muted-foreground">Resultado del sorteo no disponible.</p>
+  const matches = resultPositions.filter(item => result.matching_positions.includes(item.position))
+  return <section aria-label="Resultado del sorteo" className="mb-5 space-y-3">
+    <h3 className="text-sm font-medium">Resultado del sorteo</h3>
+    <div className="grid grid-cols-3 gap-2">{resultPositions.map(item => {
+      const matched = result.matching_positions.includes(item.position)
+      return <div key={item.position} aria-label={`${item.label}: ${result[item.key]}${matched ? ', acierto' : ''}`} className={`rounded-lg border p-2 text-center ${matched ? 'border-primary bg-primary/10 text-primary ring-1 ring-primary' : 'border-border bg-muted text-muted-foreground'}`}>
+        <p className="text-xs">{item.label}</p><p className="font-mono text-2xl font-semibold tabular-nums">{result[item.key]}</p>{matched && <span className="text-xs font-semibold">Acierto</span>}
+      </div>
+    })}</div>
+    <p className={`text-sm ${matches.length ? 'font-semibold text-primary' : 'text-muted-foreground'}`}>{matches.length ? `Acertó en ${matches.map(item => item.label.toLowerCase()).join(' y ')}.` : 'Sin coincidencia con el número de la señal.'}</p>
+  </section>
+}
 
 export function SignalsPage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -28,6 +49,6 @@ export function SignalsPage() {
     {(signals.isLoading || preparing) && <p role="status">Preparando señales para {displayDate(date)}…</p>}
     {signals.isError && <p role="alert">No se pudieron cargar las señales.</p>}
     {!preparing && !signals.isFetching && !generate.isError && signals.data?.data.length === 0 && <div className="rounded-xl border border-dashed p-10 text-center"><h2 className="font-heading text-xl">Sin señales para esta fecha</h2><p className="mt-2 text-muted-foreground">No se encontraron fuentes suficientes para generar señales en esta fecha. Se necesitan resultados confirmados y, para métodos del mismo día, horarios verificables.</p></div>}
-    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{signals.data?.data.map(signal => <article aria-label={`Señal ${signal.method.code}`} key={signal.id} className="min-w-0 rounded-xl border bg-card p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-mono font-semibold">{signal.method.code}</h2><Badge variant="outline">{statusLabels[signal.status]}</Badge></div><p className="mt-3 font-heading text-xl font-semibold">{signal.target.lottery_name}</p><p className="text-sm text-muted-foreground">{displayDate(signal.target.date)} · Versión {signal.method.version}</p><p className="my-5 font-mono text-7xl font-semibold tabular-nums tracking-tight text-primary">{signal.recommended_number}</p><div className="border-t pt-4"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Fuente</p>{signal.sources.map(source => <p key={source.draw_id} className="mt-2 text-sm">{source.lottery_name} {displayDate(source.date)}</p>)}<p className="mt-4 break-words rounded-lg bg-muted p-3 font-mono text-sm">{signal.explanation}</p></div></article>)}</div>
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">{signals.data?.data.map(signal => <article aria-label={`Señal ${signal.method.code}`} key={signal.id} className="min-w-0 rounded-xl border bg-card p-5"><div className="flex items-center justify-between gap-3"><h2 className="font-mono font-semibold">{signal.method.code}</h2><Badge variant="outline">{statusLabels[signal.status]}</Badge></div><p className="mt-3 font-heading text-xl font-semibold">{signal.target.lottery_name}</p><p className="text-sm text-muted-foreground">{displayDate(signal.target.date)} · Versión {signal.method.version}</p><p className="my-5 font-mono text-7xl font-semibold tabular-nums tracking-tight text-primary">{signal.recommended_number}</p><ObservedResult result={signal.observed_result} /><div className="border-t pt-4"><p className="text-xs font-medium uppercase tracking-widest text-muted-foreground">Fuente</p>{signal.sources.map(source => <p key={source.draw_id} className="mt-2 text-sm">{source.lottery_name} {displayDate(source.date)}</p>)}<p className="mt-4 break-words rounded-lg bg-muted p-3 font-mono text-sm">{signal.explanation}</p></div></article>)}</div>
   </main></AppShell>
 }
