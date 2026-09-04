@@ -7,6 +7,8 @@ use App\Application\Draws\Data\DrawFetchRequest;
 use App\Application\Draws\Data\DrawFetchResult;
 use App\Application\Draws\Data\DrawProviderCapabilities;
 use Closure;
+use DateTimeImmutable;
+use DateTimeZone;
 use LogicException;
 
 final readonly class FakeLotteryDrawProvider implements LotteryDrawProvider
@@ -27,7 +29,13 @@ final readonly class FakeLotteryDrawProvider implements LotteryDrawProvider
     public function fetch(DrawFetchRequest $request): DrawFetchResult
     {
         if ($this->responder === null) {
-            return $this->defaultResult ?? DrawFetchResult::notAvailable();
+            return $this->defaultResult ?? DrawFetchResult::available([[
+                'id' => sprintf('fake-%s-%d', (new DateTimeImmutable('now', new DateTimeZone('America/Santo_Domingo')))->format('Ymd'), $request->lotteryExternalId),
+                'loteria_id' => $request->lotteryExternalId,
+                'fecha_sorteo' => (new DateTimeImmutable('now', new DateTimeZone('America/Santo_Domingo')))->format('Y-m-d'),
+                'premios' => '04-00-97',
+                'hora' => '12:00:00',
+            ]]);
         }
 
         $result = ($this->responder)($request);

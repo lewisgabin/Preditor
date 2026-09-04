@@ -93,6 +93,36 @@ test('el propietario inicia sesión y consulta el dashboard', async ({ page, req
   await expect(page).toHaveURL('/sorteos')
   await expect(page.getByRole('heading', { name: 'Sorteos', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Sincronizar todas', exact: true })).toBeVisible()
-  await expect(page.locator('section').filter({ has: page.getByRole('button', { name: 'Sincronizar', exact: true }) }).getByRole('button', { name: 'Sincronizar', exact: true })).toHaveCount(10)
+  await expect(page.getByRole('button', { name: /^Sincronizar (?!todas)/ })).toHaveCount(10)
+  expect(consoleErrors).toEqual([])
+})
+
+test('sincroniza una lotería desde Sorteos mediante el provider fake', async ({ page }) => {
+  const email = requiredEnvironmentVariable('E2E_EMAIL')
+  const password = requiredEnvironmentVariable('E2E_PASSWORD')
+  const consoleErrors: string[] = []
+  page.on('console', (message) => {
+    if (message.type() === 'error') consoleErrors.push(message.text())
+  })
+
+  await page.goto('/login')
+  await page.getByLabel('Correo electrónico').fill(email)
+  await page.getByLabel('Contraseña').fill(password)
+  await page.getByRole('button', { name: 'Entrar', exact: true }).click()
+  await expect(page).toHaveURL('/')
+  await page.getByRole('button', { name: 'Sorteos', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Sorteos', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: /^Sincronizar (?!todas)/ })).toHaveCount(10)
+
+  const syncResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/sync-runs' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Sincronizar Lotería Nacional' }).click()
+  expect((await syncResponse).status()).toBe(202)
+  await expect(page.getByText('Sincronización encolada.')).toBeVisible()
+  await expect.poll(async () => (await page.getByText('04 · 00 · 97', { exact: true }).count()) > 0).toBe(true)
+
+  const duplicateResponse = page.waitForResponse((response) => new URL(response.url()).pathname === '/api/v1/sync-runs' && response.request().method() === 'POST')
+  await page.getByRole('button', { name: 'Sincronizar Lotería Nacional' }).click()
+  expect((await duplicateResponse).status()).toBe(202)
+  await expect(page.getByText('No se creó otra ejecución porque ya existe una sincronización activa o fue consultada recientemente.')).toBeVisible()
   expect(consoleErrors).toEqual([])
 })

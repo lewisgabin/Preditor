@@ -7,13 +7,16 @@ use App\Application\Draws\Queries\ListSyncRuns;
 use App\Http\Controllers\Controller;
 use App\Http\Resources\SyncRunResource;
 use App\Infrastructure\Persistence\Eloquent\Models\SyncRun;
+use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\AnonymousResourceCollection;
 
 class SyncRunController extends Controller
 {
-    public function index(ListSyncRuns $listSyncRuns): AnonymousResourceCollection
+    public function index(Request $request, ListSyncRuns $listSyncRuns): AnonymousResourceCollection
     {
-        return SyncRunResource::collection($listSyncRuns->handle());
+        $validated = $request->validate(['per_page' => ['sometimes', 'integer', 'min:1', 'max:100']]);
+
+        return SyncRunResource::collection($listSyncRuns->handle($validated['per_page'] ?? 25));
     }
 
     public function show(SyncRun $syncRun, GetSyncRun $getSyncRun): SyncRunResource
