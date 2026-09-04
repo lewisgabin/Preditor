@@ -20,7 +20,10 @@ it('shows the owner, service degradation and disabled future modules', async () 
 
   expect(await screen.findByText('Degradado')).toBeInTheDocument()
   expect(screen.getByText('Lewis')).toBeInTheDocument()
-  for (const module of ['Señales', 'Métodos', 'Capital', 'Backtesting', 'Palés']) {
+  for (const module of ['Señales', 'Métodos']) {
+    expect(screen.getByRole('button', { name: module })).toBeEnabled()
+  }
+  for (const module of ['Capital', 'Backtesting', 'Palés']) {
     expect(screen.getByRole('button', { name: new RegExp(module) })).toBeDisabled()
   }
 })

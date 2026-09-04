@@ -121,3 +121,18 @@ normalización e importación idempotente.
 # QuinielaLab
 
 La operación de sorteos actuales está disponible en `/sorteos`. Consulte `docs/phases/PHASE_01C_DRAW_OPERATIONS.md` para configurar el provider fake o real sin importar historial.
+
+## Motor de métodos — Fase 2
+
+Catálogo P01–P10 y A01–A10, versiones inmutables al usarse, generación manual
+idempotente y pantallas protegidas `/metodos` y `/senales`.
+
+```bash
+docker compose exec api php artisan migrate --isolated --force
+docker compose exec api php artisan db:seed --class=MethodSeeder
+docker compose exec api php artisan signals:generate --date=2026-09-04 --dry-run
+```
+
+La generación usa únicamente sorteos locales y bloquea fuentes cuya disponibilidad
+no puede demostrarse antes del destino. No inventa horarios ni modifica sorteos.
+Contrato y catálogo: [Fase 2](docs/phases/PHASE_02_METHOD_ENGINE.md).

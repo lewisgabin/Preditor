@@ -67,11 +67,11 @@ Implementar métodos configurables y versionados.
 
 - `methods`, `method_versions`, `signals`, `signal_sources`.
 - Registro de operadores permitidos.
-- Primeras cinco reglas del plan.
-- Los diez candidatos principales.
+- Diez métodos principales P01–P10 y diez alternativas A01–A10.
 - Explicación humana del cálculo.
-- Generación automática tras el sorteo fuente.
-- Expiración por horario.
+- Generación explícita mediante API y Artisan, sin API externa.
+- Señales históricas vencidas y corte temporal por horario verificable.
+- Pantallas protegidas `/metodos` y `/senales`.
 
 ### Aceptación
 
