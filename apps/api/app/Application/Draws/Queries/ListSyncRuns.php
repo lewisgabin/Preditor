@@ -10,6 +10,6 @@ final class ListSyncRuns
     /** @return LengthAwarePaginator<int, SyncRun> */
     public function handle(int $perPage = 25): LengthAwarePaginator
     {
-        return SyncRun::query()->orderByDesc('started_at')->orderByDesc('id')->paginate($perPage);
+        return SyncRun::query()->orderByRaw('COALESCE(started_at, created_at) DESC')->orderByDesc('id')->paginate($perPage);
     }
 }

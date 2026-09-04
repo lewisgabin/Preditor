@@ -31,7 +31,7 @@ final readonly class DispatchCurrentDrawSyncs
 
             return $summary;
         }
-        $today = new DateTimeImmutable('now', new \DateTimeZone('America/Santo_Domingo'));
+        $today = now('America/Santo_Domingo')->toImmutable();
         $lotteries = Lottery::query()->where('is_active', true)->when($externalIds !== null, fn ($query) => $query->whereIn('external_id', $externalIds))->orderBy('sort_order')->get();
         foreach ($lotteries as $lottery) {
             $summary['evaluated']++;
@@ -50,12 +50,13 @@ final readonly class DispatchCurrentDrawSyncs
 
                     continue;
                 }
-                if ($this->recoverStaleRun($lottery, $provider)) {
+                [$hasRecentRun, $recoveredRunIds] = $this->recoverStaleRuns($lottery, $provider);
+                if ($hasRecentRun) {
                     $summary['in_progress']++;
 
                     continue;
                 }
-                $last = SyncRun::query()->where('lottery_id', $lottery->id)->where('provider', $provider)->latest('created_at')->value('created_at');
+                $last = SyncRun::query()->where('lottery_id', $lottery->id)->where('provider', $provider)->whereNotIn('id', $recoveredRunIds)->latest('created_at')->value('created_at');
                 if ($last !== null && $last->greaterThan(now()->subMinutes((int) config('lottery-sync.interval_minutes')))) {
                     $summary['interval']++;
 
@@ -93,22 +94,25 @@ final readonly class DispatchCurrentDrawSyncs
             ->exists();
     }
 
-    private function recoverStaleRun(Lottery $lottery, string $provider): bool
+    /** @return array{bool, list<int>} */
+    private function recoverStaleRuns(Lottery $lottery, string $provider): array
     {
-        return DB::transaction(function () use ($lottery, $provider): bool {
-            $run = SyncRun::query()->where('lottery_id', $lottery->id)->where('provider', $provider)->whereIn('status', [SyncRunStatus::Queued, SyncRunStatus::Running])->lockForUpdate()->first();
-            if ($run === null) {
-                return false;
+        return DB::transaction(function () use ($lottery, $provider): array {
+            $runs = SyncRun::query()->where('lottery_id', $lottery->id)->where('provider', $provider)->whereIn('status', [SyncRunStatus::Queued, SyncRunStatus::Running])->lockForUpdate()->get();
+            if ($runs->isEmpty()) {
+                return [false, []];
             }
             $cutoff = now()->subMinutes((int) config('lottery-sync.stale_after_minutes'));
-            if ($run->created_at->greaterThan($cutoff)) {
-                return true;
+            if ($runs->contains(static fn (SyncRun $run): bool => $run->created_at->greaterThan($cutoff))) {
+                return [true, []];
             }
-            $metadata = array_merge($run->metadata ?? [], ['stale_detected_at' => now()->toIso8601String(), 'stale_after_minutes' => (int) config('lottery-sync.stale_after_minutes'), 'stale_recovered' => true]);
-            $run->update(['status' => SyncRunStatus::Failed, 'finished_at' => now(), 'metadata' => $metadata]);
-            SyncError::query()->firstOrCreate(['sync_run_id' => $run->id, 'type' => SyncErrorType::Unknown, 'message' => 'The draw synchronization run became stale.'], ['lottery_id' => $lottery->id, 'retryable' => true, 'attempt' => 1, 'safe_context' => ['category' => 'stale_run'], 'occurred_at' => now()]);
+            foreach ($runs as $run) {
+                $metadata = array_merge($run->metadata ?? [], ['stale_detected_at' => now()->toIso8601String(), 'stale_after_minutes' => (int) config('lottery-sync.stale_after_minutes'), 'stale_recovered' => true]);
+                $run->update(['status' => SyncRunStatus::Failed, 'finished_at' => now(), 'metadata' => $metadata]);
+                SyncError::query()->firstOrCreate(['sync_run_id' => $run->id, 'type' => SyncErrorType::Unknown, 'message' => 'The draw synchronization run became stale.'], ['lottery_id' => $lottery->id, 'retryable' => true, 'attempt' => 1, 'safe_context' => ['category' => 'stale_run'], 'occurred_at' => now()]);
+            }
 
-            return false;
+            return [false, $runs->pluck('id')->all()];
         });
     }
 }

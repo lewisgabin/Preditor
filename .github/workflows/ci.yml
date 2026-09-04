@@ -77,6 +77,10 @@ jobs:
       E2E_API_URL: http://127.0.0.1:8080
       IMAGE_TAG: ${{ github.sha }}
       WEB_PORT: 5173
+      LOTTERY_API_ENABLED: true
+      LOTTERY_API_PROVIDER: fake
+      LOTTERY_SYNC_PROVIDER: fake
+      LOTTERY_SYNC_AUTOMATIC_ENABLED: false
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
